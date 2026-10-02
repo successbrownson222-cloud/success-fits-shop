@@ -6,15 +6,14 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
 body{background:#000;color:#fff;padding:15px}
-h1{font-size:28px;font-weight:900;margin:10px 0}
+h1{font-size:28px;font-weight:900;margin:10px 0;display:flex;justify-content:space-between;align-items:center}
 .top{display:flex;gap:8px;align-items:center;background:#111;padding:10px;border-radius:12px;margin-bottom:12px}
 input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#fff}
 .btn{padding:12px 16px;border:none;border-radius:8px;font-weight:700;cursor:pointer}
 .login{background:#ff2d55;color:#fff}
 .out{background:#333;color:#fff}
-.cart{background:#111;padding:6px 12px;border-radius:20px}
 .filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0}
-.filters button{padding:8px 14px;border-radius:20px;border:1px solid #333;background:#111;color:#ccc;white-space:nowrap}
+.filters button{padding:8px 14px;border-radius:20px;border:1px solid #333;background:#111;color:#ccc}
 .filters button.active{background:#fff;color:#000}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .card{background:#111;border-radius:12px;overflow:hidden;padding:8px}
@@ -22,17 +21,34 @@ input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#f
 .card h3{font-size:13px;margin:6px 0}
 .card p{color:#ff2d55;font-weight:800}
 .card button{width:100%;margin-top:6px;padding:8px;background:#fff;color:#000;border:none;border-radius:6px;font-weight:700}
-#status{color:#0f0;font-size:12px;margin:6px 0}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:99;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+#cartDrawer{position:fixed;top:0;right:-100%;width:85%;max-width:350px;height:100%;background:#111;padding:20px;transition:.3s;z-index:100;overflow-y:auto;border-left:2px solid #222}
+#cartDrawer.open{right:0}
+.cartItem{display:flex;gap:10px;background:#1a1a1a;padding:8px;border-radius:8px;margin-bottom:8px;align-items:center}
+.cartItem img{width:50px;height:50px;border-radius:6px;object-fit:cover}
+.cartItem button{background:#ff2d55;color:#fff;border:none;padding:4px 8px;border-radius:4px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:90}
+.overlay.show{display:block}
 </style>
 </head>
 <body>
-<h1>SUCCESS FITS. <span style="float:right">🛒 <span id="count" style="background:#ff2d55;padding:2px 8px;border-radius:10px">0</span></span></h1>
+<div id="toast"></div>
+<div id="overlay" class="overlay" onclick="closeCart()"></div>
+<div id="cartDrawer">
+<h2>Your Cart (<span id="cartCount2">0</span>)</h2>
+<div id="cartList" style="margin-top:15px"></div>
+<button onclick="clearAll()" style="width:100%;margin-top:15px;background:#ff2d55;color:#fff;padding:12px;border:none;border-radius:8px;font-weight:700">Clear Cart</button>
+<button onclick="closeCart()" style="width:100%;margin-top:8px;background:#333;color:#fff;padding:12px;border:none;border-radius:8px">Close</button>
+</div>
+
+<h1>SUCCESS FITS. <span onclick="openCart()" style="cursor:pointer">🛒 <span id="count" style="background:#ff2d55;padding:4px 10px;border-radius:12px">0</span></span></h1>
+
 <div class="top">
 <input id="email" placeholder="Email to login (same on mobile)">
 <button class="btn login" onclick="login()">Login</button>
 <button class="btn out" onclick="logout()">Out</button>
 </div>
-<div id="status"></div>
+<div id="status" style="color:#0f0;font-size:12px;margin:6px 0"></div>
 <div>Logged in as: <span id="who">not logged</span></div>
 <div class="filters">
 <button class="active" onclick="filterCat('All',this)">All</button>
@@ -44,8 +60,7 @@ input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#f
 <div id="grid" class="grid"></div>
 
 <script>
-const API = ""; // same origin
-let PRODUCTS = [
+let PRODUCTS=[
  {id:1,name:"Running Shoes",category:"Shoes",price:89,image:"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500"},
  {id:2,name:"Denim Jacket",category:"Clothes",price:120,image:"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500"},
  {id:3,name:"Gold Necklace",category:"Jewelry",price:250,image:"https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=500"},
@@ -53,10 +68,13 @@ let PRODUCTS = [
  {id:5,name:"White Sneakers",category:"Shoes",price:95,image:"https://images.unsplash.com/photo-1600269452121-4f2416e55c28?w=500"},
  {id:6,name:"Black T-Shirt",category:"Clothes",price:35,image:"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500"},
 ];
+let CART=[];
 let currentCat='All';
 let email=localStorage.getItem('email')||"";
 document.getElementById('email').value=email;
 if(email) document.getElementById('who').innerText=email;
+
+function showToast(msg){ const t=document.getElementById('toast'); t.innerText=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2000); }
 
 function render(list){
  const g=document.getElementById('grid'); g.innerHTML="";
@@ -68,8 +86,7 @@ function filterCat(cat,btn){
  currentCat=cat;
  document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));
  if(btn) btn.classList.add('active');
- let list = cat==='All'? PRODUCTS : PRODUCTS.filter(x=>x.category===cat);
- render(list);
+ render(cat==='All'?PRODUCTS:PRODUCTS.filter(x=>x.category===cat));
 }
 render(PRODUCTS);
 
@@ -80,25 +97,57 @@ async function login(){
  document.getElementById('who').innerText=email;
  document.getElementById('status').innerText='Logging in...';
  try{
-   let r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-   let j=await r.json();
-   document.getElementById('status').innerText='Logged in! Cart: '+(j.cart?.length||0);
-   document.getElementById('count').innerText=j.cart?.length||0;
- }catch(e){ document.getElementById('status').innerText='Login offline (demo mode) - products still work'; }
+  let r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+  let j=await r.json(); CART=j.cart||[]; updateCartUI();
+  document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
+  showToast(`Welcome ${email} - ${CART.length} items in cart`);
+ }catch{ document.getElementById('status').innerText='Offline mode'; }
 }
-function logout(){ localStorage.removeItem('email'); email=""; document.getElementById('who').innerText="not logged"; document.getElementById('count').innerText=0; document.getElementById('email').value=""; }
+function logout(){ localStorage.removeItem('email'); email=""; CART=[]; updateCartUI(); document.getElementById('who').innerText="not logged"; document.getElementById('email').value=""; showToast('Logged out'); }
+
 async function addToCart(id){
  if(!email){ alert('Login first with email'); return; }
- document.getElementById('count').innerText=parseInt(document.getElementById('count').innerText)+1;
+ const prod=PRODUCTS.find(p=>p.id===id);
  try{
-  await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
- }catch(e){}
+  let r=await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
+  let j=await r.json(); CART=j.cart||[]; 
+ }catch{ CART.push(id); }
+ updateCartUI();
+ showToast(`✅ ${prod.name} added to cart`);
 }
 
-// try fetch real products from API, but keep fallback
-fetch('/api/products').then(r=>r.json()).then(data=>{
- if(Array.isArray(data)&&data.length>0){ PRODUCTS=data; filterCat(currentCat); }
-}).catch(()=>{});
+function updateCartUI(){
+ document.getElementById('count').innerText=CART.length;
+ document.getElementById('cartCount2').innerText=CART.length;
+ const list=document.getElementById('cartList'); list.innerHTML="";
+ let total=0;
+ CART.forEach((pid,idx)=>{
+   const p=PRODUCTS.find(x=>x.id===pid)||{name:'Item '+pid,price:0,image:''};
+   total+=p.price;
+   list.innerHTML+=`<div class="cartItem"><img src="${p.image}"><div style="flex:1"><div>${p.name}</div><div style="color:#ff2d55">$${p.price}</div></div><button onclick="removeItem(${idx})">X</button></div>`;
+ });
+ if(CART.length>0) list.innerHTML+=`<div style="margin-top:10px;font-weight:800">Total: $${total}</div>`;
+}
+function removeItem(index){
+ CART.splice(index,1);
+ updateCartUI();
+ // sync to server - clear and re-add (simple for demo)
+ fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}).then(()=>{
+   CART.forEach(id=> fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}));
+ });
+ showToast('Removed from cart');
+}
+async function clearAll(){
+ CART=[]; updateCartUI();
+ try{ await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); }catch{}
+ showToast('Cart cleared');
+ closeCart();
+}
+function openCart(){ document.getElementById('cartDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
+function closeCart(){ document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
+
+fetch('/api/products').then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length){ PRODUCTS=d; render(PRODUCTS);} }).catch(()=>{});
+if(email) login();
 </script>
 </body>
 </html>
