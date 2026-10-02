@@ -1,87 +1,66 @@
-
-from fastapi.responses import FileResponse, HTMLResponse
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict
+import os
 
 app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- FAKE DB (for HNG demo video, this is enough. For production you would use Supabase table) ---
-USERS_DB = {}  # email -> logged_in bool
-CARTS_DB = {}  # email -> [product_ids]
-
+USERS_DB = {}
+CARTS_DB = {}
 PRODUCTS = [
-  {"id":1, "name":"Air Max Sneaker", "price":45000, "category":"Shoes", "image":"https://images.unsplash.com/photo-1542291026-7eec264c27ff"},
-  {"id":2, "name":"Vintage Denim Jacket", "price":32000, "category":"Clothes", "image":"https://images.unsplash.com/photo-1551537482-f2075a1d41f2"},
-  {"id":3, "name":"Gold Layered Necklace", "price":15000, "category":"Jewelry", "image":"https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f"},
-  {"id":4, "name":"Leather Cross Bag", "price":28000, "category":"Accessories", "image":"https://images.unsplash.com/photo-1548036328-c9fa89d128fa"},
+    {"id":1,"name":"Running Shoes","category":"Shoes","price":89,"image":"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500"},
+    {"id":2,"name":"Denim Jacket","category":"Clothes","price":120,"image":"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500"},
+    {"id":3,"name":"Gold Necklace","category":"Jewelry","price":250,"image":"https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=500"},
+    {"id":4,"name":"Leather Bag","category":"Accessories","price":75,"image":"https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=500"},
+    {"id":5,"name":"Sneakers White","category":"Shoes","price":95,"image":"https://images.unsplash.com/photo-1600269452121-4f2416e55c28?w=500"},
+    {"id":6,"name":"T-Shirt Black","category":"Clothes","price":35,"image":"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500"},
 ]
 
-class LoginRequest(BaseModel):
+class LoginReq(BaseModel):
     email: str
-
-class CartRequest(BaseModel):
+class CartReq(BaseModel):
     email: str
     product_id: int
 
-# 1. LOGIN - same for web and mobile
-@app.post("/api/login")
-def login(req: LoginRequest):
-    USERS_DB[req.email] = True
-    if req.email not in CARTS_DB:
-        CARTS_DB[req.email] = []
-    return {"message": "Logged in", "email": req.email, "cart": CARTS_DB[req.email]}
-
-# 2. LOGOUT
-@app.post("/api/logout")
-def logout(req: LoginRequest):
-    USERS_DB[req.email] = False
-    return {"message": "Logged out"}
-
-# 3. PRODUCTS - same endpoint for both
 @app.get("/api/products")
 def get_products():
     return PRODUCTS
 
-# 4. GET CART - for sync check
+@app.post("/api/login")
+def login(r: LoginReq):
+    USERS_DB[r.email] = True
+    if r.email not in CARTS_DB: CARTS_DB[r.email]=[]
+    return {"email": r.email, "cart": CARTS_DB[r.email]}
+
 @app.get("/api/cart/{email}")
 def get_cart(email: str):
-    return {"email": email, "items": CARTS_DB.get(email, [])}
+    return {"cart": CARTS_DB.get(email, [])}
 
-# 5. ADD TO CART - this is where INSTANT sync happens
 @app.post("/api/cart/add")
-def add_to_cart(req: CartRequest):
-    if req.email not in CARTS_DB:
-        CARTS_DB[req.email] = []
-    CARTS_DB[req.email].append(req.product_id)
-    return {"email": req.email, "items": CARTS_DB[req.email]}
+def add_cart(r: CartReq):
+    if r.email not in CARTS_DB: CARTS_DB[r.email]=[]
+    CARTS_DB[r.email].append(r.product_id)
+    return {"cart": CARTS_DB[r.email]}
 
-@app.delete("/api/cart/clear")
-def clear_cart(req: LoginRequest):
-    CARTS_DB[req.email] = []
-    return {"message": "Cart cleared"}
+@app.post("/api/cart/clear")
+def clear_cart(r: LoginReq):
+    CARTS_DB[r.email]=[]
+    return {"cart": []}
 
 @app.get("/")
 def root():
-    # Try to find frontend file
-    for p in ["frontend/index.html", "../frontend/index.html", "./frontend/index.html"]:
-        if os.path.exists(p):
-            return FileResponse(p)
-    return HTMLResponse("<h1>Success Fits Shop API is running! Frontend missing - check vercel.json</h1>")
+    for p in ["frontend/index.html","../frontend/index.html"]:
+        if os.path.exists(p): return FileResponse(p)
+    return HTMLResponse("<h1>Success Fits API Running</h1>")
 
 @app.get("/{full_path:path}")
-def catch_all(full_path: str):
+def serve_front(full_path: str):
+    # Don't interfere with api
     if full_path.startswith("api/"):
-        return {"detail":"Not Found"}
-    for p in ["frontend/index.html", "../frontend/index.html"]:
-        if os.path.exists(p):
-            return FileResponse(p)
-    return FileResponse(p) if os.path.exists(p) else HTMLResponse("<h1>Success Fits</h1>")
+        return {"detail":"Not Found API"}
+    for p in ["frontend/index.html","../frontend/index.html"]:
+        if os.path.exists(p): return FileResponse(p)
+    return HTMLResponse("<h1>Success Fits</h1>")
