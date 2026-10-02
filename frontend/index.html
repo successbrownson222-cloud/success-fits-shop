@@ -74,7 +74,13 @@ let email=localStorage.getItem('email')||"";
 document.getElementById('email').value=email;
 if(email) document.getElementById('who').innerText=email;
 
-function showToast(msg){ const t=document.getElementById('toast'); t.innerText=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2000); }
+// LOAD SAVED CART ON START
+if(email){
+  let saved = localStorage.getItem('cart_'+email);
+  if(saved){ try{ CART=JSON.parse(saved); }catch{} }
+}
+
+function showToast(msg){ const t=document.getElementById('toast'); t.innerText=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2500); }
 
 function render(list){
  const g=document.getElementById('grid'); g.innerHTML="";
@@ -89,31 +95,51 @@ function filterCat(cat,btn){
  render(cat==='All'?PRODUCTS:PRODUCTS.filter(x=>x.category===cat));
 }
 render(PRODUCTS);
+updateCartUI();
 
 async function login(){
  email=document.getElementById('email').value.trim();
  if(!email) return alert('Enter email');
  localStorage.setItem('email',email);
  document.getElementById('who').innerText=email;
+ // load local cart first
+ let saved = localStorage.getItem('cart_'+email);
+ if(saved){ try{ CART=JSON.parse(saved); }catch{} updateCartUI(); }
  document.getElementById('status').innerText='Logging in...';
  try{
   let r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-  let j=await r.json(); CART=j.cart||[]; updateCartUI();
+  let j=await r.json(); 
+  // FIX: Keep the bigger cart (local vs server)
+  let serverCart = j.cart||[];
+  if(serverCart.length > CART.length) CART = serverCart;
+  updateCartUI();
+  localStorage.setItem('cart_'+email, JSON.stringify(CART));
   document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
-  showToast(`Welcome ${email} - ${CART.length} items in cart`);
- }catch{ document.getElementById('status').innerText='Offline mode'; }
+  showToast(`Welcome ${email} - ${CART.length} items`);
+ }catch{ 
+  document.getElementById('status').innerText=`Offline mode - ${CART.length} items saved`;
+ }
 }
-function logout(){ localStorage.removeItem('email'); email=""; CART=[]; updateCartUI(); document.getElementById('who').innerText="not logged"; document.getElementById('email').value=""; showToast('Logged out'); }
+function logout(){ 
+  localStorage.removeItem('email'); 
+  // keep cart_ data so it comes back when you login again
+  email=""; CART=[]; updateCartUI(); 
+  document.getElementById('who').innerText="not logged"; 
+  document.getElementById('email').value=""; 
+  document.getElementById('status').innerText="Logged out";
+  showToast('Logged out'); 
+}
 
 async function addToCart(id){
  if(!email){ alert('Login first with email'); return; }
  const prod=PRODUCTS.find(p=>p.id===id);
- try{
-  let r=await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
-  let j=await r.json(); CART=j.cart||[]; 
- }catch{ CART.push(id); }
+ CART.push(id);
  updateCartUI();
+ localStorage.setItem('cart_'+email, JSON.stringify(CART));
  showToast(`✅ ${prod.name} added to cart`);
+ try{
+  await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
+ }catch{}
 }
 
 function updateCartUI(){
@@ -127,11 +153,12 @@ function updateCartUI(){
    list.innerHTML+=`<div class="cartItem"><img src="${p.image}"><div style="flex:1"><div>${p.name}</div><div style="color:#ff2d55">$${p.price}</div></div><button onclick="removeItem(${idx})">X</button></div>`;
  });
  if(CART.length>0) list.innerHTML+=`<div style="margin-top:10px;font-weight:800">Total: $${total}</div>`;
+ else list.innerHTML=`<div style="color:#888">Cart empty</div>`;
 }
 function removeItem(index){
  CART.splice(index,1);
  updateCartUI();
- // sync to server - clear and re-add (simple for demo)
+ localStorage.setItem('cart_'+email, JSON.stringify(CART));
  fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}).then(()=>{
    CART.forEach(id=> fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}));
  });
@@ -139,6 +166,7 @@ function removeItem(index){
 }
 async function clearAll(){
  CART=[]; updateCartUI();
+ localStorage.setItem('cart_'+email, JSON.stringify(CART));
  try{ await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); }catch{}
  showToast('Cart cleared');
  closeCart();
@@ -147,7 +175,6 @@ function openCart(){ document.getElementById('cartDrawer').classList.add('open')
 function closeCart(){ document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
 
 fetch('/api/products').then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length){ PRODUCTS=d; render(PRODUCTS);} }).catch(()=>{});
-if(email) login();
 </script>
 </body>
 </html>
