@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Success Fits - Shoes, Clothes & Jewelry</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{background:#0f0f0f;color:#fff;padding:15px}
+.header{display:flex;justify-content:space-between;align-items:center;padding:10px 0}
+.logo{font-weight:900;font-size:22px}
+.cart-badge{background:#ff2d55;padding:2px 8px;border-radius:12px;font-size:12px}
+.login-box{background:#1c1c1e;padding:12px;border-radius:12px;margin:10px 0;display:flex;gap:8px}
+.login-box input{flex:1;padding:10px;border-radius:8px;border:none;background:#2c2c2e;color:#fff}
+.login-box button{padding:10px 14px;border-radius:8px;border:none;background:#ff2d55;color:#fff;font-weight:700}
+.filters{display:flex;gap:8px;overflow-x:auto;padding:10px 0}
+.filters button{padding:8px 14px;border-radius:20px;border:1px solid #333;background:#1c1c1e;color:#aaa;white-space:nowrap}
+.filters button.active{background:#fff;color:#000}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:#1c1c1e;border-radius:16px;overflow:hidden}
+.card img{width:100%;height:140px;object-fit:cover}
+.card-body{padding:10px}
+.price{color:#ff2d55;font-weight:800;margin-top:4px}
+.add{width:100%;margin-top:8px;padding:8px;border:none;border-radius:10px;background:#fff;color:#000;font-weight:700}
+.cart-panel{position:fixed;bottom:0;left:0;right:0;background:#1c1c1e;border-top-left-radius:20px;border-top-right-radius:20px;padding:16px;max-height:70vh;overflow:auto;transform:translateY(100%);transition:.3s}
+.cart-panel.open{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="header"><div class="logo">SUCCESS FITS.</div><div onclick="toggleCart()">🛒 <span id="cartCount" class="cart-badge">0</span></div></div>
+<div class="login-box">
+<input id="emailInput" placeholder="Email to login (same on mobile)">
+<button onclick="login()">Login</button>
+<button onclick="logout()" style="background:#333">Out</button>
+</div>
+<div id="userStatus" style="font-size:12px;color:#aaa;margin-bottom:8px"></div>
+<div class="filters">
+<button class="active" onclick="filterCat('All')">All</button>
+<button onclick="filterCat('Shoes')">Shoes</button>
+<button onclick="filterCat('Clothes')">Clothes</button>
+<button onclick="filterCat('Jewelry')">Jewelry</button>
+<button onclick="filterCat('Accessories')">Accessories</button>
+</div>
+<div id="grid" class="grid"></div>
+<div id="cartPanel" class="cart-panel">
+<h3>Cart - <span id="cartEmail"></span> <span style="float:right" onclick="toggleCart()">✕</span></h3>
+<div id="cartItems" style="margin-top:12px"></div>
+<div style="font-size:11px;color:#666;margin-top:10px">Same API /api/cart used by mobile app - instant sync</div>
+</div>
+<script>
+const API = window.location.origin;
+let allProducts = []; let currentCat='All';
+let email = localStorage.getItem('sf_email')||'';
+document.getElementById('emailInput').value=email;
+if(email) document.getElementById('userStatus').innerText='Logged in as: '+email;
+async function login(){
+email=document.getElementById('emailInput').value.trim();
+if(!email){alert('Enter email');return}
+localStorage.setItem('sf_email',email);
+await fetch(API+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+document.getElementById('userStatus').innerText='Logged in as: '+email; refreshCart();
+}
+async function logout(){
+if(!email) return;
+await fetch(API+'/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+localStorage.removeItem('sf_email'); email=''; document.getElementById('userStatus').innerText='Logged out'; document.getElementById('emailInput').value=''; updateCartCount([]);
+}
+async function loadProducts(){
+const res=await fetch(API+'/api/products'); allProducts=await res.json(); render();
+}
+function render(){
+const grid=document.getElementById('grid');
+const filtered=currentCat==='All'?allProducts:allProducts.filter(p=>p.category===currentCat);
+grid.innerHTML=filtered.map(p=>`<div class="card"><img src="${p.image}"><div class="card-body"><h3 style="font-size:13px">${p.name}</h3><div style="font-size:11px;color:#888">${p.category}</div><div class="price">₦${p.price.toLocaleString()}</div><button class="add" onclick="addToCart(${p.id})">Add to Cart</button></div></div>`).join('');
+}
+function filterCat(c){currentCat=c; document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('active',b.textContent===c)); render();}
+async function addToCart(pid){
+if(!email){alert('Login first - use same email on mobile!');return}
+const res=await fetch(API+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:pid})});
+const data=await res.json(); updateCartCount(data.items); refreshCart();
+}
+async function refreshCart(){
+if(!email) return;
+const res=await fetch(API+'/api/cart/'+email); const data=await res.json(); updateCartCount(data.items);
+const itemsDiv=document.getElementById('cartItems'); document.getElementById('cartEmail').innerText=email;
+if(data.items.length===0) itemsDiv.innerHTML='<div style="color:#666">Cart empty</div>';
+else itemsDiv.innerHTML=data.items.map(id=>{const p=allProducts.find(x=>x.id===id); return p?`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2a2a"><span>${p.name}</span><span onclick="removeCart(${p.id})" style="color:#ff2d55">Remove</span></div>`:'';}).join('');
+}
+async function removeCart(pid){await fetch(API+'/api/cart/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:pid})}); refreshCart();}
+function updateCartCount(items){document.getElementById('cartCount').innerText=items.length;}
+function toggleCart(){document.getElementById('cartPanel').classList.toggle('open'); refreshCart();}
+setInterval(()=>{if(email) refreshCart();},2000);
+loadProducts(); refreshCart();
+</script>
+</body>
+</html>
