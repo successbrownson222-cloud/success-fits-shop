@@ -1,3 +1,6 @@
+
+from fastapi.responses import FileResponse, HTMLResponse
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -65,3 +68,20 @@ def add_to_cart(req: CartRequest):
 def clear_cart(req: LoginRequest):
     CARTS_DB[req.email] = []
     return {"message": "Cart cleared"}
+
+@app.get("/")
+def root():
+    # Try to find frontend file
+    for p in ["frontend/index.html", "../frontend/index.html", "./frontend/index.html"]:
+        if os.path.exists(p):
+            return FileResponse(p)
+    return HTMLResponse("<h1>Success Fits Shop API is running! Frontend missing - check vercel.json</h1>")
+
+@app.get("/{full_path:path}")
+def catch_all(full_path: str):
+    if full_path.startswith("api/"):
+        return {"detail":"Not Found"}
+    for p in ["frontend/index.html", "../frontend/index.html"]:
+        if os.path.exists(p):
+            return FileResponse(p)
+    return FileResponse(p) if os.path.exists(p) else HTMLResponse("<h1>Success Fits</h1>")
