@@ -107,6 +107,23 @@ def root():
         if os.path.exists(p): return FileResponse(p)
     return HTMLResponse("<h1>Success Fits API Running - DB Connected!</h1>")
 
+@app.get("/api/debug")
+def debug():
+    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+    if not url:
+        return {"error": "NO DATABASE_URL SET IN VERCEL!", "has_db": False}
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as c FROM carts")
+        count = cur.fetchone()
+        cur.execute("SELECT * FROM carts LIMIT 5")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {"has_db": True, "url_set": True, "total_cart_rows": count, "sample": rows}
+    except Exception as e:
+        return {"error": str(e), "has_db": False}
+
 @app.get("/{full_path:path}")
 def serve_front(full_path: str):
     if full_path.startswith("api/"): return {"detail":"Not Found API"}
