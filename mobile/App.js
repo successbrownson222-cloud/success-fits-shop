@@ -1,94 +1,109 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Image, Alert, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TextInput, TouchableOpacity, Modal } from 'react-native';
 
-const API = 'https://success-fits-shop.vercel.app';
+const D1='https://success-fits-';
+const D2='shop.vercel.app';
+const API=D1+D2;
 
-export default function App() {
-  const [email, setEmail] = useState('successbrownson222@gmail.com');
-  const [products, setProducts] = useState([]);
-  const [cart, setCart] = useState([]);
-  const [cat, setCat] = useState('All');
+export default function App(){
+  const [pro,setPro]=useState([]);
+  const [cart,setCart]=useState([]);
+  const [cat,setCat]=useState('All');
+  const [email,setEmail]=useState('');
+  const [toast,setToast]=useState('');
+  const [showCart,setShowCart]=useState(false);
 
-  useEffect(() => {
-    fetch(`${API}/api/products`)
-      .then(r => r.json())
-      .then(data => { if(Array.isArray(data) && data.length>0) setProducts(data); })
-      .catch(() => {
-        setProducts([
-          {id:1,name:"Running Shoes",category:"Shoes",price:89,image:"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500"},
-          {id:2,name:"Denim Jacket",category:"Clothes",price:120,image:"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500"},
-          {id:5,name:"White Sneakers",category:"Shoes",price:95,image:"https://images.unsplash.com/photo-1600269452121-4f2416e55c28?w=500"},
-          {id:6,name:"Black T-Shirt",category:"Clothes",price:35,image:"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500"},
-        ]);
-      });
-  }, []);
-
-  const login = async () => {
-    try{
-      const r = await fetch(`${API}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-      const j = await r.json();
-      setCart(j.cart||[]);
-      Alert.alert('✅ Logged in', `Cart synced: ${j.cart.length} items`);
-    }catch(e){ Alert.alert('Error', e.message); }
+  const showToast=(msg)=>{
+    setToast(msg);
+    setTimeout(()=>setToast(''),2500);
   };
 
-  const addToCart = async (id, name) => {
-    setCart(prev=>[...prev, id]);
+  useEffect(()=>{
+    fetch(API+'/api/products')
+     .then(r=>r.json())
+     .then(d=>{
+        if(d && d.length>0){
+          const fixed=d.map(p=>({...p, category: p.category || 'Clothes'}));
+          setPro(fixed);
+        } else { throw new Error('empty'); }
+      })
+     .catch(()=>setPro([
+        {id:1,name:"Running Shoes",category:"Shoes",price:89},
+        {id:2,name:"Denim Jacket",category:"Clothes",price:120},
+        {id:3,name:"Gold Necklace",category:"Jewelry",price:250},
+        {id:4,name:"Leather Bag",category:"Accessories",price:75},
+        {id:5,name:"White Sneakers",category:"Shoes",price:95},
+        {id:6,name:"Black T-Shirt",category:"Clothes",price:35},
+      ]));
+  },[]);
+
+  const login=async()=>{
+    if(!email.includes('@')){ showToast('Enter valid email'); return; }
     try{
-      const r = await fetch(`${API}/api/cart/add`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
-      const j = await r.json(); setCart(j.cart);
+      await fetch(API+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+      const cartRes=await fetch(API+'/api/cart/'+email);
+      const cartData=await cartRes.json();
+      const ids=cartData.cart || [];
+      const map={
+        1:{id:1,name:"Running Shoes",price:89},
+        2:{id:2,name:"Denim Jacket",price:120},
+        3:{id:3,name:"Gold Necklace",price:250},
+        4:{id:4,name:"Leather Bag",price:75},
+        5:{id:5,name:"White Sneakers",price:95},
+        6:{id:6,name:"Black T-Shirt",price:35},
+      };
+      const mapped=ids.map(id=> pro.find(p=>p.id==id) || map[id]).filter(Boolean);
+      setCart(mapped);
+      showToast('Cart loaded: '+mapped.length);
+    }catch(e){
+      showToast('Login failed');
+    }
+  };
+
+  const total=cart.reduce((s,i)=>s+i.price,0);
+  const list=cat==='All'?pro:pro.filter(p=>p.category===cat);
+
+  const add=async(item)=>{
+    if(!email.includes('@')){
+      showToast('Enter email first to save forever!');
+      setCart(pr=> pr.find(x=>x.id===item.id)? pr : [...pr, item]);
+      return;
+    }
+    try{
+      const r=await fetch(API+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email, product_id:item.id})});
+      const d=await r.json();
+      const map={1:{id:1,name:"Running Shoes",price:89},2:{id:2,name:"Denim Jacket",price:120},3:{id:3,name:"Gold Necklace",price:250},4:{id:4,name:"Leather Bag",price:75},5:{id:5,name:"White Sneakers",price:95},6:{id:6,name:"Black T-Shirt",price:35}};
+      const mapped=d.cart.map(id=> pro.find(p=>p.id==id) || map[id]).filter(Boolean);
+      setCart(mapped);
+      showToast(item.name+' added!');
+    }catch(e){
+      setCart(pr=> pr.find(x=>x.id===item.id)? pr : [...pr, item]);
+      showToast(item.name+' added locally');
+    }
+  };
+
+  const remove=(id)=>{ setCart(pr=>pr.filter(x=>x.id!==id)); showToast('Removed'); };
+  const checkout=async()=>{
+    if(!cart.length){ showToast('Cart empty'); return; }
+    try{
+      await fetch(API+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
     }catch{}
-    Alert.alert('Added', `${name} added`);
-  };
-
-  const clearCart = async () => {
+    showToast('Order Success $'+total);
     setCart([]);
-    try{ await fetch(`${API}/api/cart/clear`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); }catch{}
   };
-
-  const filtered = cat==='All'?products:products.filter(p=>p.category===cat);
 
   return (
-    <View style={s.container}>
-      <Text style={s.title}>SUCCESS FITS.</Text>
-      <Text style={s.sub}>Mobile • {API}</Text>
-      <TextInput value={email} onChangeText={setEmail} placeholder="same email as web" placeholderTextColor="#777" style={s.input}/>
-      <View style={{flexDirection:'row', gap:8}}>
-        <TouchableOpacity onPress={login} style={[s.btn,{backgroundColor:'#ff2d55',flex:1}]}><Text style={s.btnText}>Login & Sync</Text></TouchableOpacity>
-        <TouchableOpacity onPress={clearCart} style={[s.btn,{backgroundColor:'#333'}]}><Text style={s.btnText}>Clear</Text></TouchableOpacity>
+    <View style={{padding:20,paddingTop:50}}>
+      <Text style={{fontSize:20,fontWeight:'bold'}}>SUCCESS FITS - {email||'Guest'}</Text>
+      <TextInput placeholder="Enter email to sync cart" value={email} onChangeText={setEmail} style={{borderWidth:1,padding:8,marginVertical:10}} />
+      <TouchableOpacity onPress={login} style={{backgroundColor:'black',padding:10}}><Text style={{color:'white',textAlign:'center'}}>Login & Load Cart</Text></TouchableOpacity>
+      <View style={{flexDirection:'row',marginVertical:10,justifyContent:'space-between'}}>
+        <Text>Cart:{cart.length} ${total}</Text>
+        <TouchableOpacity onPress={()=>setShowCart(true)}><Text style={{fontWeight:'bold'}}>View Cart</Text></TouchableOpacity>
       </View>
-      <Text style={s.cartText}>🛒 Cart: {cart.length} items</Text>
-      <View style={s.filters}>
-        {['All','Shoes','Clothes','Jewelry','Accessories'].map(c=>(
-          <TouchableOpacity key={c} onPress={()=>setCat(c)} style={[s.filterBtn, cat===c && s.filterActive]}><Text style={[s.filterText, cat===c && {color:'#000'}]}>{c}</Text></TouchableOpacity>
-        ))}
-      </View>
-      <FlatList data={filtered} numColumns={2} keyExtractor={i=>i.id.toString()} renderItem={({item})=>(
-        <View style={s.card}>
-          <Image source={{uri:item.image}} style={s.img}/>
-          <Text style={s.name}>{item.name}</Text>
-          <Text style={s.price}>${item.price}</Text>
-          <TouchableOpacity onPress={()=>addToCart(item.id,item.name)} style={s.addBtn}><Text style={{fontWeight:'700'}}>Add to Cart</Text></TouchableOpacity>
-        </View>
-      )}/>
+      <FlatList data={list} numColumns={2} keyExtractor={i=>''+i.id} renderItem={({item})=><View style={{flex:1,margin:5,borderWidth:1,padding:10}}><Text>{item.name}</Text><Text>${item.price}</Text><TouchableOpacity onPress={()=>add(item)} style={{backgroundColor:'black',padding:5,marginTop:5}}><Text style={{color:'white',textAlign:'center'}}>Add to Cart</Text></TouchableOpacity></View>} />
+      {toast? <View style={{position:'absolute',bottom:20,left:20,right:20,backgroundColor:'black',padding:10}}><Text style={{color:'white',textAlign:'center'}}>{toast}</Text></View> : null}
+      <Modal visible={showCart} animationType="slide"><View style={{padding:20,paddingTop:50}}><Text style={{fontSize:20,fontWeight:'bold'}}>Cart ${total}</Text><FlatList data={cart} keyExtractor={i=>''+i.id} renderItem={({item})=><View style={{flexDirection:'row',justifyContent:'space-between',padding:10}}><Text>{item.name}</Text><TouchableOpacity onPress={()=>remove(item.id)}><Text>X</Text></TouchableOpacity></View>} /><TouchableOpacity onPress={checkout} style={{backgroundColor:'black',padding:15,marginTop:20}}><Text style={{color:'white',textAlign:'center'}}>Checkout ${total}</Text></TouchableOpacity><TouchableOpacity onPress={()=>setShowCart(false)} style={{padding:15}}><Text style={{textAlign:'center'}}>Close</Text></TouchableOpacity></View></Modal>
     </View>
   );
 }
-const s = StyleSheet.create({
-  container:{flex:1,backgroundColor:'#000',padding:16,paddingTop:50},
-  title:{color:'#fff',fontSize:26,fontWeight:'900'},
-  sub:{color:'#666',fontSize:11,marginBottom:10},
-  input:{backgroundColor:'#222',color:'#fff',padding:12,borderRadius:8,marginBottom:8},
-  btn:{padding:14,borderRadius:8,alignItems:'center'},
-  btnText:{color:'#fff',fontWeight:'800'},
-  cartText:{color:'#0f0',marginTop:12,fontWeight:'700'},
-  filters:{flexDirection:'row',gap:6,marginTop:10,marginBottom:6},
-  filterBtn:{paddingHorizontal:10,paddingVertical:6,borderRadius:20,backgroundColor:'#111',borderWidth:1,borderColor:'#333'},
-  filterActive:{backgroundColor:'#fff'},
-  filterText:{color:'#888',fontSize:12},
-  card:{flex:1,backgroundColor:'#111',margin:4,borderRadius:10,padding:8},
-  img:{height:100,borderRadius:8},
-  name:{color:'#fff',fontSize:12,marginTop:6},
-  price:{color:'#ff2d55',fontWeight:'800'},
-  addBtn:{backgroundColor:'#fff',padding:8,borderRadius:6,marginTop:6,alignItems:'center'}
-});
