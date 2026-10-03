@@ -90,7 +90,6 @@ function filterCat(cat,btn){
 }
 render(PRODUCTS); updateCartUI();
 
-// === FIXED LOGIN WITH REAL SYNC ===
 async function login(){
  email=document.getElementById('email').value.trim();
  if(!email) return alert('Enter email');
@@ -103,16 +102,11 @@ async function login(){
   let r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
   let j=await r.json();
   let serverCart = j.cart||[];
-
-  // MERGE: push any local items missing on server to server
-  let toPush = CART.filter(id =>!serverCart.includes(id));
+  let toPush = CART.filter(id => !serverCart.includes(id));
   for(let id of toPush){
     await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
   }
-
-  // FINAL: combine and remove duplicates
   CART = [...new Set([...serverCart,...CART])];
-
   localStorage.setItem('cart_'+email, JSON.stringify(CART));
   updateCartUI();
   document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
@@ -121,7 +115,15 @@ async function login(){
   document.getElementById('status').innerText=`Offline - ${CART.length} items`;
  }
 }
-function logout(){ localStorage.setItem('cart_'+email, JSON.stringify(CART)); localStorage.removeItem('email'); email=""; CART=[]; updateCartUI(); document.getElementById('who').innerText="not logged"; document.getElementById('email').value=""; document.getElementById('status').innerText="Logged out"; showToast('Logged out'); }
+function logout(){ 
+  localStorage.setItem('cart_'+email, JSON.stringify(CART)); 
+  localStorage.removeItem('email'); 
+  email=""; CART=[]; updateCartUI(); 
+  document.getElementById('who').innerText="not logged"; 
+  document.getElementById('email').value=""; 
+  document.getElementById('status').innerText="Logged out"; 
+  showToast('Logged out'); 
+}
 
 async function addToCart(id){
  if(!email){ alert('Login first'); return; }
@@ -130,8 +132,14 @@ async function addToCart(id){
  CART.push(id);
  updateCartUI();
  localStorage.setItem('cart_'+email, JSON.stringify(CART));
+ document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
  showToast(`${prod.name} added`);
- try{ await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}); }catch{}
+ try{ 
+   let res = await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
+   let data = await res.json();
+   let count = data.cart ? data.cart.length : CART.length;
+   document.getElementById('status').innerText=`Logged in! Cart synced: ${count}`;
+ }catch{}
 }
 
 function updateCartUI(){
@@ -148,10 +156,10 @@ function updateCartUI(){
  else list.innerHTML=`<div style="color:#888">Cart empty</div>`;
 }
 async function removeItem(index){
- let removed = CART.splice(index,1)[0];
+ CART.splice(index,1);
  updateCartUI();
  localStorage.setItem('cart_'+email, JSON.stringify(CART));
- // Proper sync: clear and re-add all remaining
+ document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
  try{
    await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
    for(let id of CART){ await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}); }
@@ -159,7 +167,9 @@ async function removeItem(index){
  showToast('Removed');
 }
 async function clearAll(){
- CART=[]; updateCartUI(); localStorage.setItem('cart_'+email, JSON.stringify(CART));
+ CART=[]; updateCartUI(); 
+ localStorage.setItem('cart_'+email, JSON.stringify(CART));
+ document.getElementById('status').innerText=`Logged in! Cart synced: 0`;
  try{ await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); }catch{}
  showToast('Cart cleared'); closeCart();
 }
