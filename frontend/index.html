@@ -21,7 +21,7 @@ input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#f
 .card h3{font-size:13px;margin:6px 0}
 .card p{color:#ff2d55;font-weight:800}
 .card button{width:100%;margin-top:6px;padding:8px;background:#fff;color:#000;border:none;border-radius:6px;font-weight:700}
-#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:99;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:99}
 #cartDrawer{position:fixed;top:0;right:-100%;width:85%;max-width:350px;height:100%;background:#111;padding:20px;transition:.3s;z-index:100;overflow-y:auto;border-left:2px solid #222}
 #cartDrawer.open{right:0}
 .cartItem{display:flex;gap:10px;background:#1a1a1a;padding:8px;border-radius:8px;margin-bottom:8px;align-items:center}
@@ -73,20 +73,14 @@ let currentCat='All';
 let email=localStorage.getItem('email')||"";
 document.getElementById('email').value=email;
 if(email) document.getElementById('who').innerText=email;
-
-// LOAD SAVED CART ON START
 if(email){
   let saved = localStorage.getItem('cart_'+email);
   if(saved){ try{ CART=JSON.parse(saved); }catch{} }
 }
-
 function showToast(msg){ const t=document.getElementById('toast'); t.innerText=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2500); }
-
 function render(list){
  const g=document.getElementById('grid'); g.innerHTML="";
- list.forEach(p=>{
-   g.innerHTML+=`<div class="card"><img src="${p.image}"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>`
- })
+ list.forEach(p=>{ g.innerHTML+=`<div class="card"><img src="${p.image}"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>` })
 }
 function filterCat(cat,btn){
  currentCat=cat;
@@ -94,52 +88,50 @@ function filterCat(cat,btn){
  if(btn) btn.classList.add('active');
  render(cat==='All'?PRODUCTS:PRODUCTS.filter(x=>x.category===cat));
 }
-render(PRODUCTS);
-updateCartUI();
+render(PRODUCTS); updateCartUI();
 
+// === FIXED LOGIN WITH REAL SYNC ===
 async function login(){
  email=document.getElementById('email').value.trim();
  if(!email) return alert('Enter email');
  localStorage.setItem('email',email);
  document.getElementById('who').innerText=email;
- // load local cart first
  let saved = localStorage.getItem('cart_'+email);
  if(saved){ try{ CART=JSON.parse(saved); }catch{} updateCartUI(); }
- document.getElementById('status').innerText='Logging in...';
+ document.getElementById('status').innerText='Syncing...';
  try{
   let r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-  let j=await r.json(); 
-  // FIX: Keep the bigger cart (local vs server)
+  let j=await r.json();
   let serverCart = j.cart||[];
-  if(serverCart.length > CART.length) CART = serverCart;
-  updateCartUI();
+
+  // MERGE: push any local items missing on server to server
+  let toPush = CART.filter(id =>!serverCart.includes(id));
+  for(let id of toPush){
+    await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
+  }
+
+  // FINAL: combine and remove duplicates
+  CART = [...new Set([...serverCart,...CART])];
+
   localStorage.setItem('cart_'+email, JSON.stringify(CART));
+  updateCartUI();
   document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
-  showToast(`Welcome ${email} - ${CART.length} items`);
- }catch{ 
-  document.getElementById('status').innerText=`Offline mode - ${CART.length} items saved`;
+  showToast(`Synced! ${CART.length} items`);
+ }catch(e){
+  document.getElementById('status').innerText=`Offline - ${CART.length} items`;
  }
 }
-function logout(){ 
-  localStorage.removeItem('email'); 
-  // keep cart_ data so it comes back when you login again
-  email=""; CART=[]; updateCartUI(); 
-  document.getElementById('who').innerText="not logged"; 
-  document.getElementById('email').value=""; 
-  document.getElementById('status').innerText="Logged out";
-  showToast('Logged out'); 
-}
+function logout(){ localStorage.setItem('cart_'+email, JSON.stringify(CART)); localStorage.removeItem('email'); email=""; CART=[]; updateCartUI(); document.getElementById('who').innerText="not logged"; document.getElementById('email').value=""; document.getElementById('status').innerText="Logged out"; showToast('Logged out'); }
 
 async function addToCart(id){
- if(!email){ alert('Login first with email'); return; }
+ if(!email){ alert('Login first'); return; }
  const prod=PRODUCTS.find(p=>p.id===id);
+ if(CART.includes(id)){ showToast('Already in cart'); return; }
  CART.push(id);
  updateCartUI();
  localStorage.setItem('cart_'+email, JSON.stringify(CART));
- showToast(`✅ ${prod.name} added to cart`);
- try{
-  await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
- }catch{}
+ showToast(`${prod.name} added`);
+ try{ await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}); }catch{}
 }
 
 function updateCartUI(){
@@ -155,25 +147,24 @@ function updateCartUI(){
  if(CART.length>0) list.innerHTML+=`<div style="margin-top:10px;font-weight:800">Total: $${total}</div>`;
  else list.innerHTML=`<div style="color:#888">Cart empty</div>`;
 }
-function removeItem(index){
- CART.splice(index,1);
+async function removeItem(index){
+ let removed = CART.splice(index,1)[0];
  updateCartUI();
  localStorage.setItem('cart_'+email, JSON.stringify(CART));
- fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}).then(()=>{
-   CART.forEach(id=> fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}));
- });
- showToast('Removed from cart');
+ // Proper sync: clear and re-add all remaining
+ try{
+   await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+   for(let id of CART){ await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}); }
+ }catch{}
+ showToast('Removed');
 }
 async function clearAll(){
- CART=[]; updateCartUI();
- localStorage.setItem('cart_'+email, JSON.stringify(CART));
+ CART=[]; updateCartUI(); localStorage.setItem('cart_'+email, JSON.stringify(CART));
  try{ await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); }catch{}
- showToast('Cart cleared');
- closeCart();
+ showToast('Cart cleared'); closeCart();
 }
 function openCart(){ document.getElementById('cartDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
 function closeCart(){ document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
-
 fetch('/api/products').then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length){ PRODUCTS=d; render(PRODUCTS);} }).catch(()=>{});
 </script>
 </body>
