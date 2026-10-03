@@ -2,8 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
-import os, json
-import psycopg2
+import os, json, psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = FastAPI()
@@ -19,33 +18,26 @@ PRODUCTS = [
 ]
 
 def get_conn():
-    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+    # Vercel gives 3 URLs — try NON_POOLING first, it's the only one that works with psycopg2
+    url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
     if not url:
+        print("NO DB URL FOUND")
         return None
-    return psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
+    try:
+        # Don't pass sslmode if URL already has it
+        if "sslmode" in url:
+            return psycopg2.connect(url, cursor_factory=RealDictCursor)
+        else:
+            return psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
+    except Exception as e:
+        print(f"DB CONNECT FAIL: {e}")
+        raise e
 
-def init_db():
-    conn = get_conn()
-    if not conn: return
-    cur = conn.cursor()
+def ensure_tables(cur):
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            email TEXT PRIMARY KEY
-        );
-        CREATE TABLE IF NOT EXISTS carts (
-            email TEXT,
-            product_id INT,
-            PRIMARY KEY (email, product_id)
-        );
+        CREATE TABLE IF NOT EXISTS users (email TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS carts (email TEXT, product_id INT, PRIMARY KEY (email, product_id));
     """)
-    conn.commit()
-    cur.close()
-    conn.close()
-
-try:
-    init_db()
-except Exception as e:
-    print("DB init error:", e)
 
 class LoginReq(BaseModel):
     email: str
@@ -53,76 +45,91 @@ class CartReq(BaseModel):
     email: str
     product_id: int
 
+@app.get("/api/debug")
+def debug():
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        ensure_tables(cur)
+        conn.commit()
+        cur.execute("SELECT email, product_id FROM carts")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {"has_db": True, "total": len(rows), "rows": rows, "env_has_db": True}
+    except Exception as e:
+        return {"has_db": False, "error": str(e)}
+
 @app.get("/api/products")
 def get_products(): return PRODUCTS
 
 @app.post("/api/login")
 def login(r: LoginReq):
-    conn = get_conn()
-    if not conn:
-        return {"email":r.email,"cart":[]}
-    cur = conn.cursor()
-    cur.execute("INSERT INTO users (email) VALUES (%s) ON CONFLICT DO NOTHING", (r.email,))
-    conn.commit()
-    cur.execute("SELECT product_id FROM carts WHERE email=%s", (r.email,))
-    cart = [row['product_id'] for row in cur.fetchall()]
-    cur.close(); conn.close()
-    return {"email":r.email,"cart":cart}
+    try:
+        conn = get_conn()
+        if not conn:
+            return {"email":r.email,"cart":[],"warning":"no db"}
+        cur = conn.cursor()
+        ensure_tables(cur)
+        cur.execute("INSERT INTO users (email) VALUES (%s) ON CONFLICT DO NOTHING", (r.email,))
+        conn.commit()
+        cur.execute("SELECT product_id FROM carts WHERE email=%s", (r.email,))
+        cart = [row['product_id'] for row in cur.fetchall()]
+        cur.close(); conn.close()
+        print(f"LOGIN {r.email} cart={cart}")
+        return {"email":r.email,"cart":cart}
+    except Exception as e:
+        print(f"LOGIN ERROR: {e}")
+        return {"email":r.email,"cart":[],"error":str(e)}
 
 @app.get("/api/cart/{email}")
 def get_cart(email: str):
-    conn = get_conn()
-    if not conn: return {"cart":[]}
-    cur = conn.cursor()
-    cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
-    cart = [row['product_id'] for row in cur.fetchall()]
-    cur.close(); conn.close()
-    return {"cart": cart}
+    try:
+        conn = get_conn()
+        if not conn: return {"cart":[]}
+        cur = conn.cursor()
+        ensure_tables(cur)
+        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
+        cart = [row['product_id'] for row in cur.fetchall()]
+        cur.close(); conn.close()
+        return {"cart": cart}
+    except Exception as e:
+        return {"cart":[],"error":str(e)}
 
 @app.post("/api/cart/add")
 def add_cart(r: CartReq):
-    conn = get_conn()
-    if not conn: return {"cart":[r.product_id]}
-    cur = conn.cursor()
-    cur.execute("INSERT INTO carts (email, product_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (r.email, r.product_id))
-    conn.commit()
-    cur.execute("SELECT product_id FROM carts WHERE email=%s", (r.email,))
-    cart = [row['product_id'] for row in cur.fetchall()]
-    cur.close(); conn.close()
-    return {"cart":cart}
+    try:
+        conn = get_conn()
+        if not conn: return {"cart":[r.product_id],"warning":"no db"}
+        cur = conn.cursor()
+        ensure_tables(cur)
+        cur.execute("INSERT INTO carts (email, product_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (r.email, r.product_id))
+        conn.commit()
+        cur.execute("SELECT product_id FROM carts WHERE email=%s", (r.email,))
+        cart = [row['product_id'] for row in cur.fetchall()]
+        cur.close(); conn.close()
+        print(f"ADD {r.email} {r.product_id} -> {cart}")
+        return {"cart":cart}
+    except Exception as e:
+        print(f"ADD ERROR: {e}")
+        return {"cart":[],"error":str(e)}
 
 @app.post("/api/cart/clear")
 def clear_cart(r: LoginReq):
-    conn = get_conn()
-    if conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM carts WHERE email=%s", (r.email,))
-        conn.commit()
-        cur.close(); conn.close()
+    try:
+        conn = get_conn()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM carts WHERE email=%s", (r.email,))
+            conn.commit()
+            cur.close(); conn.close()
+    except: pass
     return {"cart":[]}
 
 @app.get("/")
 def root():
     for p in ["frontend/index.html","../frontend/index.html"]:
         if os.path.exists(p): return FileResponse(p)
-    return HTMLResponse("<h1>Success Fits API Running - DB Connected!</h1>")
-
-@app.get("/api/debug")
-def debug():
-    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
-    if not url:
-        return {"error": "NO DATABASE_URL SET IN VERCEL!", "has_db": False}
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as c FROM carts")
-        count = cur.fetchone()
-        cur.execute("SELECT * FROM carts LIMIT 5")
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        return {"has_db": True, "url_set": True, "total_cart_rows": count, "sample": rows}
-    except Exception as e:
-        return {"error": str(e), "has_db": False}
+    return HTMLResponse("<h1>API Running</h1>")
 
 @app.get("/{full_path:path}")
 def serve_front(full_path: str):
