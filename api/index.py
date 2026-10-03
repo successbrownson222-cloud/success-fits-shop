@@ -1,8 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
-import os, json, psycopg2
+import os, psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = FastAPI()
@@ -18,26 +18,21 @@ PRODUCTS = [
 ]
 
 def get_conn():
-    # Vercel gives 3 URLs — try NON_POOLING first, it's the only one that works with psycopg2
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
-    if not url:
-        print("NO DB URL FOUND")
-        return None
-    try:
-        # Don't pass sslmode if URL already has it
-        if "sslmode" in url:
-            return psycopg2.connect(url, cursor_factory=RealDictCursor)
-        else:
-            return psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
-    except Exception as e:
-        print(f"DB CONNECT FAIL: {e}")
-        raise e
+    if not url: return None
+    if "sslmode" in url:
+        return psycopg2.connect(url, cursor_factory=RealDictCursor)
+    else:
+        return psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
 
 def ensure_tables(cur):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (email TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS carts (email TEXT, product_id INT, PRIMARY KEY (email, product_id));
     """)
+
+def clean_email(e: str):
+    return e.strip().lower() if e else ""
 
 class LoginReq(BaseModel):
     email: str
@@ -55,35 +50,19 @@ def debug():
         cur.execute("SELECT email, product_id FROM carts")
         rows = cur.fetchall()
         cur.close(); conn.close()
-        return {"has_db": True, "total": len(rows), "rows": rows, "env_has_db": True}
+        return {"has_db": True, "total": len(rows), "rows": rows}
     except Exception as e:
         return {"has_db": False, "error": str(e)}
 
 @app.get("/api/products")
 def get_products(): return PRODUCTS
 
-@app.post("/api/login")
-def login(r: LoginReq):
+# === FIX 1: SUPPORT BOTH /api/cart?email= AND /api/cart/{email} ===
+@app.get("/api/cart")
+def get_cart_query(email: str = Query(None)):
     try:
-        conn = get_conn()
-        if not conn:
-            return {"email":r.email,"cart":[],"warning":"no db"}
-        cur = conn.cursor()
-        ensure_tables(cur)
-        cur.execute("INSERT INTO users (email) VALUES (%s) ON CONFLICT DO NOTHING", (r.email,))
-        conn.commit()
-        cur.execute("SELECT product_id FROM carts WHERE email=%s", (r.email,))
-        cart = [row['product_id'] for row in cur.fetchall()]
-        cur.close(); conn.close()
-        print(f"LOGIN {r.email} cart={cart}")
-        return {"email":r.email,"cart":cart}
-    except Exception as e:
-        print(f"LOGIN ERROR: {e}")
-        return {"email":r.email,"cart":[],"error":str(e)}
-
-@app.get("/api/cart/{email}")
-def get_cart(email: str):
-    try:
+        if not email: return {"cart":[]}
+        email = clean_email(email)
         conn = get_conn()
         if not conn: return {"cart":[]}
         cur = conn.cursor()
@@ -91,23 +70,62 @@ def get_cart(email: str):
         cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
         cart = [row['product_id'] for row in cur.fetchall()]
         cur.close(); conn.close()
+        print(f"GET CART QUERY {email} -> {cart}")
+        return {"cart": cart}
+    except Exception as e:
+        print(f"CART QUERY ERROR {e}")
+        return {"cart":[],"error":str(e)}
+
+@app.get("/api/cart/{email}")
+def get_cart_path(email: str):
+    try:
+        email = clean_email(email)
+        conn = get_conn()
+        if not conn: return {"cart":[]}
+        cur = conn.cursor()
+        ensure_tables(cur)
+        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
+        cart = [row['product_id'] for row in cur.fetchall()]
+        cur.close(); conn.close()
+        print(f"GET CART PATH {email} -> {cart}")
         return {"cart": cart}
     except Exception as e:
         return {"cart":[],"error":str(e)}
 
+# === FIX 2: LOWERCASE EMAIL EVERYWHERE ===
+@app.post("/api/login")
+def login(r: LoginReq):
+    try:
+        email = clean_email(r.email)
+        conn = get_conn()
+        if not conn: return {"email":email,"cart":[]}
+        cur = conn.cursor()
+        ensure_tables(cur)
+        cur.execute("INSERT INTO users (email) VALUES (%s) ON CONFLICT DO NOTHING", (email,))
+        conn.commit()
+        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
+        cart = [row['product_id'] for row in cur.fetchall()]
+        cur.close(); conn.close()
+        print(f"LOGIN {email} cart={cart}")
+        return {"email":email,"cart":cart}
+    except Exception as e:
+        print(f"LOGIN ERROR: {e}")
+        return {"email":clean_email(r.email),"cart":[],"error":str(e)}
+
 @app.post("/api/cart/add")
 def add_cart(r: CartReq):
     try:
+        email = clean_email(r.email)
         conn = get_conn()
-        if not conn: return {"cart":[r.product_id],"warning":"no db"}
+        if not conn: return {"cart":[r.product_id]}
         cur = conn.cursor()
         ensure_tables(cur)
-        cur.execute("INSERT INTO carts (email, product_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (r.email, r.product_id))
+        cur.execute("INSERT INTO carts (email, product_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (email, r.product_id))
         conn.commit()
-        cur.execute("SELECT product_id FROM carts WHERE email=%s", (r.email,))
+        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
         cart = [row['product_id'] for row in cur.fetchall()]
         cur.close(); conn.close()
-        print(f"ADD {r.email} {r.product_id} -> {cart}")
+        print(f"ADD {email} {r.product_id} -> {cart}")
         return {"cart":cart}
     except Exception as e:
         print(f"ADD ERROR: {e}")
@@ -116,10 +134,11 @@ def add_cart(r: CartReq):
 @app.post("/api/cart/clear")
 def clear_cart(r: LoginReq):
     try:
+        email = clean_email(r.email)
         conn = get_conn()
         if conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM carts WHERE email=%s", (r.email,))
+            cur.execute("DELETE FROM carts WHERE email=%s", (email,))
             conn.commit()
             cur.close(); conn.close()
     except: pass
