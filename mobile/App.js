@@ -3,6 +3,15 @@ import { View, Text, FlatList, TextInput, TouchableOpacity, Modal } from 'react-
 
 const API = 'https://success-fits-shop.vercel.app';
 
+const FALLBACK = [
+  {id:1,name:"Running Shoes",price:89},
+  {id:2,name:"Denim Jacket",price:120},
+  {id:3,name:"Gold Necklace",price:250},
+  {id:4,name:"Leather Bag",price:75},
+  {id:5,name:"White Sneakers",price:95},
+  {id:6,name:"Black T-Shirt",price:35},
+];
+
 export default function App(){
   const [pro,setPro]=useState([]);
   const [cart,setCart]=useState([]);
@@ -13,16 +22,18 @@ export default function App(){
 
   const showToast=(msg)=>{ setToast(msg); setTimeout(()=>setToast(''),3500); };
 
-  // Load products first
   useEffect(()=>{
     fetch(API+'/api/products').then(r=>r.json()).then(d=>{
-      let list = Array.isArray(d)? d : (d.products || d.data || []);
+      let list = Array.isArray(d)? d : (d.products || []);
       if(list.length) setPro(list);
     }).catch(()=>{});
   },[]);
 
+  const getAllProducts = () => pro.length ? pro : FALLBACK;
+  
   const findProduct = (id) => {
-    return pro.find(p=> String(p.id)===String(id) || String(p._id)===String(id)) || {id, name:'Item '+id, price:0};
+    let all = getAllProducts();
+    return all.find(p=> String(p.id)===String(id)) || {id, name:'Item '+id, price:89};
   };
 
   const login=async()=>{
@@ -30,6 +41,7 @@ export default function App(){
     if(!clean.includes('@')){ showToast('Enter valid email'); return; }
     showToast('Syncing '+clean+'...');
     try{
+      // FIX 1: Try login first
       let res = await fetch(API+'/api/login',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -37,35 +49,35 @@ export default function App(){
       });
       let data = await res.json();
       console.log('LOGIN DATA:', data);
+      let rawCart = data.cart || [];
 
-      // backend may return: cart=[1,2] OR cart=[{product_id:1}, {product:...}]
-      let rawCart = data.cart || data.data || [];
-      let ids = rawCart.map(c => typeof c==='object'? (c.product_id || c.id || c._id || c.product?.id) : c).filter(Boolean);
-
-      let mapped = ids.map(id=> findProduct(id)).filter(Boolean);
-      // if products not loaded yet, keep ids and fix later
-      if(mapped.length===0 && ids.length>0 && pro.length===0){
-        // temporary cart with ids
-        setCart(ids.map(id=>({id, name:'Loading...', price:0})));
-      } else {
-        setCart(mapped);
+      // FIX 2: If login cart empty, try GET /api/cart?email=
+      if(rawCart.length===0){
+        let r2 = await fetch(API+'/api/cart?email='+encodeURIComponent(clean));
+        let d2 = await r2.json();
+        console.log('CART QUERY:', d2);
+        rawCart = d2.cart || [];
       }
+
+      let ids = rawCart.map(c => typeof c==='object'? (c.product_id || c.id) : c).filter(Boolean);
+      let mapped = ids.map(id=> findProduct(id));
+      
+      setCart(mapped);
       setLoggedIn(true);
       setEmail(clean);
-      showToast(`Welcome! Synced ${mapped.length || ids.length} items from site`);
+      showToast(`Welcome! Synced ${mapped.length} items from site`);
     }catch(e){
       showToast('Login error: '+e.message);
     }
   };
 
-  // When products load AFTER cart, re-map prices
+  // Re-map when products load
   useEffect(()=>{
     if(loggedIn && cart.length>0 && pro.length>0){
-      let fixed = cart.map(c=>{
-        let real = findProduct(c.id);
-        return real.price? real : c;
-      });
-      setCart(fixed);
+      setCart(prev=> prev.map(c=>{
+        let real = getAllProducts().find(p=>String(p.id)===String(c.id));
+        return real ? real : c;
+      }));
     }
   },[pro]);
 
@@ -77,8 +89,7 @@ export default function App(){
   const add=async(item)=>{
     if(!loggedIn){ showToast('Login first'); return; }
     if(cart.find(x=>String(x.id)===String(item.id))){ showToast('Already in cart'); return; }
-    let newCart=[...cart, item];
-    setCart(newCart);
+    setCart([...cart, item]);
     try{
       await fetch(API+'/api/cart/add',{
         method:'POST',
@@ -110,7 +121,7 @@ export default function App(){
         <TouchableOpacity onPress={()=>setShowCart(true)} style={{backgroundColor:'black', padding:6, paddingHorizontal:12, borderRadius:15}}><Text style={{color:'white', fontWeight:'700'}}>View Cart ({cart.length})</Text></TouchableOpacity>
       </View>
 
-      <FlatList data={pro.length?pro:[{id:1,name:"Running Shoes",price:89},{id:2,name:"Denim Jacket",price:120},{id:3,name:"Gold Necklace",price:250},{id:4,name:"Leather Bag",price:75}]} numColumns={2} keyExtractor={i=>''+i.id} renderItem={({item})=>
+      <FlatList data={getAllProducts()} numColumns={2} keyExtractor={i=>''+i.id} renderItem={({item})=>
         <View style={{flex:1,margin:5,borderWidth:1,padding:10, borderRadius:10}}>
           <Text style={{fontWeight:'700'}}>{item.name}</Text><Text style={{color:'#ff2d55'}}>${item.price}</Text>
           <TouchableOpacity onPress={()=>add(item)} style={{backgroundColor:'black',padding:6,marginTop:6, borderRadius:6}}><Text style={{color:'white',textAlign:'center'}}>Add</Text></TouchableOpacity>
