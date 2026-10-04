@@ -2,34 +2,30 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
-import os, psycopg2
+import os
+import psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# --- CONFIG ---
 PRODUCTS = [
-    {"id":1,"name":"Running Shoes","category":"Shoes","price":89,"image":"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500"},
-    {"id":2,"name":"Denim Jacket","category":"Clothes","price":120,"image":"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500"},
-    {"id":3,"name":"Gold Necklace","category":"Jewelry","price":250,"image":"https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=500"},
-    {"id":4,"name":"Leather Bag","category":"Accessories","price":75,"image":"https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=500"},
-    {"id":5,"name":"White Sneakers","category":"Shoes","price":95,"image":"https://images.unsplash.com/photo-1600269452121-4f2416e55c28?w=500"},
-    {"id":6,"name":"Black T-Shirt","category":"Clothes","price":35,"image":"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500"},
+    {"id":1,"name":"Running Shoes","price":89,"image":"","category":"Shoes"},
+    {"id":2,"name":"Denim Jacket","price":120,"image":"","category":"Jackets"},
+    {"id":3,"name":"Gold Necklace","price":250,"image":"","category":"Jewelry"},
+    {"id":4,"name":"Leather Bag","price":75,"image":"","category":"Bags"},
+    {"id":5,"name":"White Sneakers","price":95,"image":"","category":"Shoes"},
+    {"id":6,"name":"Black T-Shirt","price":35,"image":"","category":"Shirts"},
 ]
 
 def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
     if not url: return None
-    if "sslmode" in url:
-        return psycopg2.connect(url, cursor_factory=RealDictCursor)
-    else:
+    try:
+        if "sslmode" in url: return psycopg2.connect(url, cursor_factory=RealDictCursor)
         return psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
-
-def ensure_tables(cur):
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (email TEXT PRIMARY KEY);
-        CREATE TABLE IF NOT EXISTS carts (email TEXT, product_id INT, PRIMARY KEY (email, product_id));
-    """)
+    except: return None
 
 def clean_email(e: str):
     return e.strip().lower() if e else ""
@@ -37,144 +33,126 @@ def clean_email(e: str):
 def check_admin(s):
     return s == (os.getenv("ADMIN_SECRET") or "admin123")
 
-class ProductReq(BaseModel): 
-    name: str; price: int; image: str = ""; category: str = "General"; secret: str
+def ensure_tables():
+    try:
+        conn = get_conn()
+        if not conn: return
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS users (email TEXT PRIMARY KEY);")
+        cur.execute("CREATE TABLE IF NOT EXISTS carts (email TEXT, product_id INT, PRIMARY KEY (email, product_id));")
+        cur.execute("CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT, price INT, image TEXT, category TEXT);")
+        cur.execute("SELECT COUNT(*) as c FROM products;")
+        count = cur.fetchone()['c']
+        if count == 0:
+            for p in PRODUCTS:
+                cur.execute("INSERT INTO products (id,name,price,image,category) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING;", (p['id'],p['name'],p['price'],p['image'],p['category']))
+        conn.commit()
+        cur.close(); conn.close()
+    except Exception as e:
+        print(f"TABLE ERROR: {e}")
+
+ensure_tables()
+
+class LoginReq(BaseModel): email: str
+class CartAddReq(BaseModel): email: str; product_id: int
+class ProductReq(BaseModel): name: str; price: int; image: str = ""; category: str = "General"; secret: str
 
 @app.get("/api/debug")
 def debug():
     try:
-        conn = get_conn()
-        cur = conn.cursor()
-        ensure_tables(cur)
-        conn.commit()
-        cur.execute("SELECT email, product_id FROM carts")
-        rows = cur.fetchall()
+        conn=get_conn(); cur=conn.cursor()
+        cur.execute("SELECT email, product_id FROM carts;")
+        rows=cur.fetchall()
         cur.close(); conn.close()
         return {"has_db": True, "total": len(rows), "rows": rows}
-    except Exception as e:
-        return {"has_db": False, "error": str(e)}
+    except Exception as e: return {"has_db": False, "error": str(e)}
 
 @app.get("/api/products")
-def get_products(): return PRODUCTS
+def get_products():
+    try:
+        conn=get_conn(); cur=conn.cursor()
+        cur.execute("SELECT id,name,price,image,category FROM products ORDER BY id;")
+        rows=cur.fetchall()
+        cur.close(); conn.close()
+        if rows: return rows
+        return PRODUCTS
+    except: return PRODUCTS
 
-# === FIX 1: SUPPORT BOTH /api/cart?email= AND /api/cart/{email} ===
 @app.get("/api/cart")
-def get_cart_query(email: str = Query(None)):
+def get_cart(email: str = Query("")):
+    email=clean_email(email)
     try:
-        if not email: return {"cart":[]}
-        email = clean_email(email)
-        conn = get_conn()
-        if not conn: return {"cart":[]}
-        cur = conn.cursor()
-        ensure_tables(cur)
-        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
-        cart = [row['product_id'] for row in cur.fetchall()]
+        conn=get_conn(); cur=conn.cursor()
+        cur.execute("SELECT product_id FROM carts WHERE LOWER(email)=%s;", (email,))
+        cart=[r['product_id'] for r in cur.fetchall()]
         cur.close(); conn.close()
-        print(f"GET CART QUERY {email} -> {cart}")
         return {"cart": cart}
-    except Exception as e:
-        print(f"CART QUERY ERROR {e}")
-        return {"cart":[],"error":str(e)}
+    except Exception as e: return {"cart":[], "error": str(e)}
 
-@app.get("/api/cart/{email}")
-def get_cart_path(email: str):
-    try:
-        email = clean_email(email)
-        conn = get_conn()
-        if not conn: return {"cart":[]}
-        cur = conn.cursor()
-        ensure_tables(cur)
-        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
-        cart = [row['product_id'] for row in cur.fetchall()]
-        cur.close(); conn.close()
-        print(f"GET CART PATH {email} -> {cart}")
-        return {"cart": cart}
-    except Exception as e:
-        return {"cart":[],"error":str(e)}
-
-@app.get("/admin")
-def admin_page():
-    if os.path.exists("frontend/admin.html"):
-        return FileResponse("frontend/admin.html")
-    return HTMLResponse("admin.html not found - create frontend/admin.html")
-
-# === FIX 2: LOWERCASE EMAIL EVERYWHERE ===
 @app.post("/api/login")
 def login(r: LoginReq):
-    try:
-        email = clean_email(r.email)
-        conn = get_conn()
-        if not conn: return {"email":email,"cart":[]}
-        cur = conn.cursor()
-        ensure_tables(cur)
-        cur.execute("INSERT INTO users (email) VALUES (%s) ON CONFLICT DO NOTHING", (email,))
-        conn.commit()
-        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
-        cart = [row['product_id'] for row in cur.fetchall()]
-        cur.close(); conn.close()
-        print(f"LOGIN {email} cart={cart}")
-        return {"email":email,"cart":cart}
-    except Exception as e:
-        print(f"LOGIN ERROR: {e}")
-        return {"email":clean_email(r.email),"cart":[],"error":str(e)}
+    return get_cart(r.email)
 
 @app.post("/api/cart/add")
-def add_cart(r: CartReq):
+def add_cart(r: CartAddReq):
+    email=clean_email(r.email)
     try:
-        email = clean_email(r.email)
-        conn = get_conn()
-        if not conn: return {"cart":[r.product_id]}
-        cur = conn.cursor()
-        ensure_tables(cur)
-        cur.execute("INSERT INTO carts (email, product_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (email, r.product_id))
+        conn=get_conn(); cur=conn.cursor()
+        cur.execute("DELETE FROM carts WHERE LOWER(email)=%s AND product_id=%s;", (email, r.product_id))
+        cur.execute("INSERT INTO carts (email,product_id) VALUES (%s,%s) ON CONFLICT DO NOTHING;", (email, r.product_id))
         conn.commit()
-        cur.execute("SELECT product_id FROM carts WHERE email=%s", (email,))
-        cart = [row['product_id'] for row in cur.fetchall()]
+        cur.execute("SELECT product_id FROM carts WHERE LOWER(email)=%s;", (email,))
+        cart=[row['product_id'] for row in cur.fetchall()]
         cur.close(); conn.close()
-        print(f"ADD {email} {r.product_id} -> {cart}")
-        return {"cart":cart}
+        return {"cart": cart}
     except Exception as e:
         print(f"ADD ERROR: {e}")
-        return {"cart":[],"error":str(e)}
-
-@app.post("/api/admin/add-product")
-def add_product(r: ProductReq):
-    if not check_admin(r.secret): return {"error":"wrong admin secret - set admin123"}
-    conn=get_conn(); cur=conn.cursor()
-    cur.execute("INSERT INTO products (name,price,image,category) VALUES (%s,%s,%s,%s) RETURNING id", (r.name, r.price, r.image, r.category))
-    nid=cur.fetchone()['id']; conn.commit(); cur.close(); conn.close()
-    return {"success":True,"id":nid}
-
-@app.post("/api/admin/delete-product")
-def del_product(product_id: int, secret: str = ""):
-    if not check_admin(secret): return {"error":"wrong admin secret"}
-    conn=get_conn(); cur=conn.cursor()
-    cur.execute("DELETE FROM products WHERE id=%s", (product_id,))
-    conn.commit(); cur.close(); conn.close()
-    return {"success":True}
+        return {"cart":[], "error": str(e)}
 
 @app.post("/api/cart/clear")
 def clear_cart(r: LoginReq):
     try:
-        email = clean_email(r.email)
-        conn = get_conn()
-        if conn:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM carts WHERE email=%s", (email,))
-            conn.commit()
-            cur.close(); conn.close()
+        email=clean_email(r.email)
+        conn=get_conn(); cur=conn.cursor()
+        cur.execute("DELETE FROM carts WHERE LOWER(email)=%s;", (email,))
+        conn.commit(); cur.close(); conn.close()
     except: pass
     return {"cart":[]}
 
+@app.post("/api/admin/add-product")
+def add_product(r: ProductReq):
+    if not check_admin(r.secret): return {"error":"wrong admin secret - set admin123"}
+    try:
+        conn=get_conn(); cur=conn.cursor()
+        cur.execute("INSERT INTO products (name,price,image,category) VALUES (%s,%s,%s,%s) RETURNING id;", (r.name, r.price, r.image, r.category))
+        nid=cur.fetchone()['id']; conn.commit(); cur.close(); conn.close()
+        return {"success":True,"id":nid}
+    except Exception as e: return {"error": str(e)}
+
+@app.post("/api/admin/delete-product")
+def del_product(product_id: int, secret: str = ""):
+    if not check_admin(secret): return {"error":"wrong admin secret"}
+    try:
+        conn=get_conn(); cur=conn.cursor()
+        cur.execute("DELETE FROM products WHERE id=%s;", (product_id,))
+        conn.commit(); cur.close(); conn.close()
+        return {"success":True}
+    except Exception as e: return {"error": str(e)}
+
+@app.get("/admin")
+def admin_page():
+    if os.path.exists("frontend/admin.html"): return FileResponse("frontend/admin.html")
+    return HTMLResponse("admin.html not found - create frontend/admin.html")
+
 @app.get("/")
 def root():
-    for p in ["frontend/index.html","../frontend/index.html"]:
-        if os.path.exists(p): return FileResponse(p)
+    if os.path.exists("frontend/index.html"): return FileResponse("frontend/index.html")
     return HTMLResponse("<h1>API Running</h1>")
 
 @app.get("/{full_path:path}")
-def serve_front(full_path: str):
-    if full_path.startswith("api/"): return {"detail":"Not Found API"}
-    for p in ["frontend/index.html","../frontend/index.html"]:
-        if os.path.exists(p): return FileResponse(p)
-    return HTMLResponse("<h1>Success Fits</h1>")
+def serve(full_path: str):
+    if full_path.startswith("api/"): return {"detail":"Not Found"}
+    p = f"frontend/{full_path}"
+    if os.path.exists(p): return FileResponse(p)
+    if os.path.exists("frontend/index.html"): return FileResponse("frontend/index.html")
+    return HTMLResponse("Not found")
