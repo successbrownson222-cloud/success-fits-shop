@@ -57,6 +57,20 @@ class LoginReq(BaseModel): email: str
 class CartAddReq(BaseModel): email: str; product_id: int
 class ProductReq(BaseModel): name: str; price: int; image: str = ""; category: str = "General"; secret: str
 
+# Helper to find frontend files on Vercel
+def find_frontend(file_name):
+    possible = [
+        f"frontend/{file_name}",
+        f"../frontend/{file_name}",
+        os.path.join(os.path.dirname(__file__), f"../frontend/{file_name}"),
+        os.path.join(os.path.dirname(__file__), f"frontend/{file_name}"),
+        file_name
+    ]
+    for p in possible:
+        if os.path.exists(p):
+            return p
+    return None
+
 @app.get("/api/debug")
 def debug():
     try:
@@ -141,18 +155,30 @@ def del_product(product_id: int, secret: str = ""):
 
 @app.get("/admin")
 def admin_page():
-    if os.path.exists("frontend/admin.html"): return FileResponse("frontend/admin.html")
-    return HTMLResponse("admin.html not found - create frontend/admin.html")
+    fp = find_frontend("admin.html")
+    if fp:
+        return FileResponse(fp)
+    return HTMLResponse(f"admin.html not found - checked paths. Make sure frontend/admin.html exists in GitHub repo. CWD={os.getcwd()} Files={os.listdir('.')}", status_code=404)
 
 @app.get("/")
 def root():
-    if os.path.exists("frontend/index.html"): return FileResponse("frontend/index.html")
+    fp = find_frontend("index.html")
+    if fp:
+        return FileResponse(fp)
     return HTMLResponse("<h1>API Running</h1>")
 
 @app.get("/{full_path:path}")
 def serve(full_path: str):
-    if full_path.startswith("api/"): return {"detail":"Not Found"}
-    p = f"frontend/{full_path}"
-    if os.path.exists(p): return FileResponse(p)
-    if os.path.exists("frontend/index.html"): return FileResponse("frontend/index.html")
+    if full_path.startswith("api/"):
+        return {"detail":"Not Found"}
+    if full_path == "admin":
+        fp = find_frontend("admin.html")
+        if fp:
+            return FileResponse(fp)
+    p = find_frontend(full_path)
+    if p:
+        return FileResponse(p)
+    fp_index = find_frontend("index.html")
+    if fp_index:
+        return FileResponse(fp_index)
     return HTMLResponse("Not found")
