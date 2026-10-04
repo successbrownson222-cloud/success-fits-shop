@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from pathlib import Path
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -22,17 +23,26 @@ def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
     if not url: return None
     try:
-        if "sslmode" in url: return psycopg2.connect(url, cursor_factory=RealDictCursor)
         return psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
-    except: return None
+    except:
+        return None
 
 def clean_email(e: str): return e.strip().lower() if e else ""
 def check_admin(s): return s == (os.getenv("ADMIN_SECRET") or "admin123")
 
+# FIXED - works on Vercel
 def find_frontend(name):
-    poss = [f"frontend/{name}", f"../frontend/{name}", os.path.join(os.path.dirname(__file__), f"../frontend/{name}"), os.path.join(os.path.dirname(__file__), f"frontend/{name}")]
-    for p in poss:
-        if os.path.exists(p): return p
+    base = Path(__file__).resolve().parent
+    possible = [
+        base / ".." / "frontend" / name,
+        base / "frontend" / name,
+        Path.cwd() / "frontend" / name,
+        Path("/var/task/frontend") / name,
+        Path("/var/task") / "frontend" / name,
+    ]
+    for p in possible:
+        if p.exists():
+            return str(p)
     return None
 
 def ensure_tables():
@@ -60,7 +70,7 @@ class ProductReq(BaseModel): name: str; price: int; image: str = ""; category: s
 def debug():
     try:
         conn=get_conn(); cur=conn.cursor(); cur.execute("SELECT email, product_id FROM carts;"); rows=cur.fetchall(); cur.close(); conn.close()
-        return {"has_db": True, "total": len(rows), "rows": rows}
+        return {"has_db": True, "total": len(rows), "rows": rows, "cwd": os.getcwd(), "dir": str(list(Path.cwd().iterdir())[:10])}
     except Exception as e: return {"has_db": False, "error": str(e)}
 
 @app.get("/api/products")
@@ -112,23 +122,56 @@ def del_product(product_id: int, secret: str = ""):
         conn=get_conn(); cur=conn.cursor(); cur.execute("DELETE FROM products WHERE id=%s;", (product_id,)); conn.commit(); cur.close(); conn.close(); return {"success":True}
     except Exception as e: return {"error": str(e)}
 
+# ADMIN - FIXED TO ALWAYS WORK
+ADMIN_HTML = """
+<!DOCTYPE html><html><head><title>Admin - SUCCESS FITS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{font-family:sans-serif;padding:20px;max-width:600px;margin:auto}input{width:100%;padding:10px;margin:5px 0}button{padding:12px;background:black;color:white;width:100%;border:none;cursor:pointer}</style>
+</head><body>
+<h1>SUCCESS FITS - Admin</h1>
+<input id="secret" placeholder="Admin Secret (admin123)" value="admin123">
+<input id="name" placeholder="Product Name">
+<input id="price" placeholder="Price" type="number">
+<input id="category" placeholder="Category">
+<input id="image" placeholder="Image URL (optional)">
+<button onclick="addP()">Add Product</button>
+<p id="msg"></p>
+<h3>Delete Product</h3>
+<input id="delId" placeholder="Product ID to delete" type="number">
+<button onclick="delP()" style="background:red">Delete</button>
+<script>
+async function addP(){
+ const b={name:document.getElementById('name').value, price:parseInt(document.getElementById('price').value), category:document.getElementById('category').value, image:document.getElementById('image').value, secret:document.getElementById('secret').value};
+ const r=await fetch('/api/admin/add-product',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}); const j=await r.json(); document.getElementById('msg').innerText=JSON.stringify(j);
+}
+async function delP(){
+ const id=document.getElementById('delId').value; const sec=document.getElementById('secret').value;
+ const r=await fetch(`/api/admin/delete-product?product_id=${id}&secret=${sec}`,{method:'POST'}); const j=await r.json(); document.getElementById('msg').innerText=JSON.stringify(j);
+}
+</script>
+</body></html>
+"""
+
 @app.get("/admin")
+@app.get("/admin/")
 def admin_page():
     fp = find_frontend("admin.html")
     if fp: return FileResponse(fp)
-    return HTMLResponse(f"admin.html not found - CWD={os.getcwd()} - Checked", status_code=404)
+    # Fallback - always works even if admin.html missing
+    return HTMLResponse(ADMIN_HTML)
 
 @app.get("/")
 def root():
     fp = find_frontend("index.html")
     if fp: return FileResponse(fp)
-    return HTMLResponse("<h1>API Running</h1>")
+    return HTMLResponse("<h1>API Running - frontend/index.html not found at "+os.getcwd()+"</h1>")
 
 @app.get("/{full_path:path}")
 def serve(full_path: str):
-    if full_path.startswith("api/"): return {"detail":"Not Found"}
+    if full_path.startswith("api/"): 
+        return HTMLResponse("API Not Found", status_code=404)
     p = find_frontend(full_path)
-    if p: return FileResponse(p)
+    if p and os.path.isfile(p): return FileResponse(p)
     fp = find_frontend("index.html")
     if fp: return FileResponse(fp)
-    return HTMLResponse("Not found")
+    return HTMLResponse(ADMIN_HTML if "admin" in full_path else "<h1>Shop Loading...</h1>", status_code=200)
