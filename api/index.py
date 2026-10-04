@@ -34,11 +34,11 @@ def ensure_tables(cur):
 def clean_email(e: str):
     return e.strip().lower() if e else ""
 
-class LoginReq(BaseModel):
-    email: str
-class CartReq(BaseModel):
-    email: str
-    product_id: int
+def check_admin(s):
+    return s == (os.getenv("ADMIN_SECRET") or "admin123")
+
+class ProductReq(BaseModel): 
+    name: str; price: int; image: str = ""; category: str = "General"; secret: str
 
 @app.get("/api/debug")
 def debug():
@@ -92,6 +92,12 @@ def get_cart_path(email: str):
     except Exception as e:
         return {"cart":[],"error":str(e)}
 
+@app.get("/admin")
+def admin_page():
+    if os.path.exists("frontend/admin.html"):
+        return FileResponse("frontend/admin.html")
+    return HTMLResponse("admin.html not found - create frontend/admin.html")
+
 # === FIX 2: LOWERCASE EMAIL EVERYWHERE ===
 @app.post("/api/login")
 def login(r: LoginReq):
@@ -130,6 +136,22 @@ def add_cart(r: CartReq):
     except Exception as e:
         print(f"ADD ERROR: {e}")
         return {"cart":[],"error":str(e)}
+
+@app.post("/api/admin/add-product")
+def add_product(r: ProductReq):
+    if not check_admin(r.secret): return {"error":"wrong admin secret - set admin123"}
+    conn=get_conn(); cur=conn.cursor()
+    cur.execute("INSERT INTO products (name,price,image,category) VALUES (%s,%s,%s,%s) RETURNING id", (r.name, r.price, r.image, r.category))
+    nid=cur.fetchone()['id']; conn.commit(); cur.close(); conn.close()
+    return {"success":True,"id":nid}
+
+@app.post("/api/admin/delete-product")
+def del_product(product_id: int, secret: str = ""):
+    if not check_admin(secret): return {"error":"wrong admin secret"}
+    conn=get_conn(); cur=conn.cursor()
+    cur.execute("DELETE FROM products WHERE id=%s", (product_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"success":True}
 
 @app.post("/api/cart/clear")
 def clear_cart(r: LoginReq):
