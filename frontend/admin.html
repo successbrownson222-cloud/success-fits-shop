@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Success Fits</title>
+<style>
+body{font-family:sans-serif;padding:15px;background:#f5f5f5}
+input{width:100%;padding:12px;margin:6px 0;border:1px solid #ccc;border-radius:8px;box-sizing:border-box}
+button{width:100%;padding:12px;background:#000;color:#fff;border:none;border-radius:8px;margin-top:8px}
+.card{background:#fff;padding:12px;margin:8px 0;border-radius:10px;border:1px solid #ddd}
+</style>
+</head>
+<body>
+<h2>Admin Dashboard</h2>
+<input id="secret" type="password" placeholder="Admin Secret = admin123">
+<hr>
+<h3>Add Product</h3>
+<input id="name" placeholder="Product Name">
+<input id="price" type="number" placeholder="Price e.g. 89">
+<input id="image" placeholder="Image URL (optional)">
+<input id="category" placeholder="Category e.g. Shoes">
+<button onclick="addProduct()">Add Product</button>
+<p id="msg"></p>
+<hr>
+<h3>All Products <button onclick="load()" style="width:auto;padding:5px 10px">Refresh</button></h3>
+<div id="list">Loading...</div>
+
+<script>
+const API = '';
+async function load(){
+  let r = await fetch('/api/products');
+  let data = await r.json();
+  let arr = Array.isArray(data) ? data : (data.products||[]);
+  document.getElementById('list').innerHTML = arr.map(p=>`
+    <div class="card">
+      <b>${p.name}</b> - $${p.price}<br>
+      <small>${p.category||''} | ID: ${p.id}</small><br>
+      <button onclick="delProduct(${p.id})" style="background:red;margin-top:5px">Delete</button>
+    </div>
+  `).join('');
+}
+async function addProduct(){
+  let body={
+    name:document.getElementById('name').value,
+    price:parseInt(document.getElementById('price').value),
+    image:document.getElementById('image').value,
+    category:document.getElementById('category').value||'General',
+    secret:document.getElementById('secret').value
+  };
+  if(!body.name||!body.price){ alert('Enter name and price'); return; }
+  let r=await fetch('/api/admin/add-product',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  let d=await r.json();
+  document.getElementById('msg').innerText = JSON.stringify(d);
+  if(d.success){ load(); document.getElementById('name').value=''; document.getElementById('price').value=''; }
+}
+async function delProduct(id){
+  let secret=document.getElementById('secret').value;
+  if(!secret){ alert('Enter admin secret first'); return; }
+  if(!confirm('Delete product '+id+'?')) return;
+  let r=await fetch(`/api/admin/delete-product?secret=${secret}&product_id=${id}`,{method:'POST'});
+  let d=await r.json(); alert(JSON.stringify(d)); load();
+}
+load();
+</script>
+</body>
+</html>
