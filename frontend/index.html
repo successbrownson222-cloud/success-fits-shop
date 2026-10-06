@@ -5,51 +5,90 @@
 <title>Success Fits - Shoes, Clothes & Jewelry</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
-body{background:#000;color:#fff;padding:15px}
+body{background:#000;color:#fff;padding:15px;overflow-x:hidden}
 h1{font-size:28px;font-weight:900;margin:10px 0;display:flex;justify-content:space-between;align-items:center}
 .top{display:flex;gap:8px;align-items:center;background:#111;padding:10px;border-radius:12px;margin-bottom:12px}
-input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#fff}
+input,select{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#fff;width:100%;margin-bottom:8px}
 .btn{padding:12px 16px;border:none;border-radius:8px;font-weight:700;cursor:pointer}
 .login{background:#ff2d55;color:#fff}
 .out{background:#333;color:#fff}
 .filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0}
-.filters button{padding:8px 14px;border-radius:20px;border:1px solid #333;background:#111;color:#ccc}
-.filters button.active{background:#fff;color:#000}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-.card{background:#111;border-radius:12px;overflow:hidden;padding:8px}
-.card img{width:100%;height:120px;object-fit:cover;border-radius:8px}
+.filters button{padding:8px 14px;border-radius:20px;border:1px solid #333;background:#111;color:#ccc;cursor:pointer;transition:.2s}
+.filters button.active{background:#fff;color:#000;transform:scale(1.05)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.card{background:#111;border-radius:16px;overflow:hidden;padding:8px;animation:pop .5s ease both;transition:.3s;cursor:pointer}
+.card:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 10px 30px rgba(255,45,85,.3)}
+.card img{width:100%;height:130px;object-fit:cover;border-radius:10px;transition:.4s}
+.card:hover img{transform:scale(1.08)}
 .card h3{font-size:13px;margin:6px 0}
 .card p{color:#ff2d55;font-weight:800}
-.card button{width:100%;margin-top:6px;padding:8px;background:#fff;color:#000;border:none;border-radius:6px;font-weight:700}
-#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:99}
-#cartDrawer{position:fixed;top:0;right:-100%;width:85%;max-width:350px;height:100%;background:#111;padding:20px;transition:.3s;z-index:100;overflow-y:auto;border-left:2px solid #222}
+.card button{width:100%;margin-top:6px;padding:10px;background:#fff;color:#000;border:none;border-radius:10px;font-weight:800;transition:.2s}
+.card button:active{transform:scale(0.92)}
+@keyframes pop{from{opacity:0;transform:translateY(30px) scale(.9)} to{opacity:1;transform:translateY(0) scale(1)}}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:999;animation:pop .3s}
+#cartDrawer{position:fixed;top:0;right:-100%;width:90%;max-width:380px;height:100%;background:#0f0f0f;padding:20px;transition:.4s cubic-bezier(.2,.8,.2,1);z-index:100;overflow-y:auto;border-left:1px solid #222;display:flex;flex-direction:column}
 #cartDrawer.open{right:0}
-.cartItem{display:flex;gap:10px;background:#1a1a1a;padding:8px;border-radius:8px;margin-bottom:8px;align-items:center}
-.cartItem img{width:50px;height:50px;border-radius:6px;object-fit:cover}
-.cartItem button{background:#ff2d55;color:#fff;border:none;padding:4px 8px;border-radius:4px}
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:90}
+.cartItem{display:flex;gap:10px;background:#1a1a1a;padding:10px;border-radius:12px;margin-bottom:10px;align-items:center;animation:pop .3s}
+.cartItem img{width:60px;height:60px;border-radius:10px;object-fit:cover}
+.qty{display:flex;gap:6px;align-items:center;margin-top:4px}
+.qty button{background:#222;color:#fff;border:none;width:26px;height:26px;border-radius:6px;font-weight:800}
+.checkoutBox{background:#1a1a1a;padding:15px;border-radius:16px;margin-top:auto}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:none;z-index:90}
 .overlay.show{display:block}
+#authModal{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;z-index:200}
+#authModal.show{display:flex}
+.authCard{background:#111;width:90%;max-width:360px;padding:20px;border-radius:20px;animation:pop .4s}
+.adminPanel{background:linear-gradient(135deg,#111,#222);border:1px solid #ff2d55;padding:15px;border-radius:16px;margin:15px 0;display:none}
 </style>
 </head>
 <body>
 <div id="toast"></div>
 <div id="overlay" class="overlay" onclick="closeCart()"></div>
+
+<div id="authModal" onclick="if(event.target==this)closeAuth()"><div class="authCard">
+<h2 id="authTitle" style="font-weight:900;margin-bottom:10px">Login to Success Fits</h2>
+<input id="a_name" placeholder="Full Name (for signup)" style="display:none">
+<input id="a_email" placeholder="Email">
+<input id="a_pass" type="password" placeholder="Password">
+<button class="btn login" style="width:100%;margin-top:8px" onclick="doAuth()">Continue</button>
+<p style="text-align:center;margin-top:10px;font-size:13px"><span onclick="toggleAuth()" id="authSwitch" style="color:#ff2d55;cursor:pointer;text-decoration:underline">Need account? Sign up</span> • <span onclick="closeAuth()" style="color:#888;cursor:pointer">Close</span></p>
+<div id="authMsg" style="color:#0f0;font-size:12px;margin-top:8px"></div>
+</div></div>
+
 <div id="cartDrawer">
-<h2>Your Cart (<span id="cartCount2">0</span>)</h2>
-<div id="cartList" style="margin-top:15px"></div>
-<button onclick="clearAll()" style="width:100%;margin-top:15px;background:#ff2d55;color:#fff;padding:12px;border:none;border-radius:8px;font-weight:700">Clear Cart</button>
-<button onclick="closeCart()" style="width:100%;margin-top:8px;background:#333;color:#fff;padding:12px;border:none;border-radius:8px">Close</button>
+<h2 style="font-weight:900">Your Cart (<span id="cartCount2">0</span>) <span style="float:right;cursor:pointer" onclick="closeCart()">✕</span></h2>
+<div id="cartList" style="margin-top:15px;flex:1;overflow-y:auto"></div>
+<div class="checkoutBox">
+<h3 style="font-weight:900;margin-bottom:8px">Checkout</h3>
+<input id="c_name" placeholder="Full Name">
+<input id="c_address" placeholder="Delivery Address">
+<input id="c_phone" placeholder="Phone Number">
+<div style="display:flex;justify-content:space-between;margin:10px 0;font-weight:900;font-size:18px"><span>Total:</span><span id="c_total">$0</span></div>
+<button onclick="doCheckout()" style="width:100%;background:#ff2d55;color:#fff;padding:14px;border:none;border-radius:12px;font-weight:900">Pay Now • Checkout</button>
+<button onclick="closeCart()" style="width:100%;margin-top:8px;background:#222;color:#fff;padding:12px;border:none;border-radius:12px">Continue Shopping</button>
+<button onclick="clearAll()" style="width:100%;margin-top:8px;background:transparent;color:#888;border:1px solid #333;padding:10px;border-radius:12px">Clear Cart</button>
+</div>
 </div>
 
-<h1>SUCCESS FITS. <span onclick="openCart()" style="cursor:pointer">🛒 <span id="count" style="background:#ff2d55;padding:4px 10px;border-radius:12px">0</span></span></h1>
+<h1>SUCCESS FITS <span onclick="openCart()" style="cursor:pointer">🛒 <span id="count" style="background:#ff2d55;padding:4px 10px;border-radius:12px">0</span></span></h1>
 
 <div class="top">
-<input id="email" placeholder="Email to login (same on mobile)">
-<button class="btn login" onclick="login()">Login</button>
+<div style="flex:1"><div style="font-size:12px;color:#888">Logged in as:</div><div id="who" style="font-weight:800">not logged</div></div>
+<button class="btn login" onclick="openAuth()">Login / Sign Up</button>
 <button class="btn out" onclick="logout()">Out</button>
 </div>
-<div id="status" style="color:#0f0;font-size:12px;margin:6px 0"></div>
-<div>Logged in as: <span id="who">not logged</span></div>
+
+<div id="admin" class="adminPanel">
+<h3 style="color:#ff2d55">🔐 Secure Admin Dashboard</h3>
+<p style="font-size:12px;color:#888;margin:4px 0">Only you (admin) can see this</p>
+<input id="p_name" placeholder="Product Name">
+<input id="p_price" type="number" placeholder="Price">
+<input id="p_cat" placeholder="Category (Shoes/Clothes/Jewelry)">
+<input id="p_image" placeholder="Image URL">
+<button class="btn login" style="width:100%" onclick="addProduct()">Add Product (Secure)</button>
+<div id="adminMsg" style="font-size:12px;margin-top:6px"></div>
+</div>
+
 <div class="filters">
 <button class="active" onclick="filterCat('All',this)">All</button>
 <button onclick="filterCat('Shoes',this)">Shoes</button>
@@ -60,122 +99,106 @@ input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#f
 <div id="grid" class="grid"></div>
 
 <script>
+const API = ""; // same domain
+const ADMIN_EMAIL = "successbrownson222@gmail.com";
 let PRODUCTS=[
  {id:1,name:"Running Shoes",category:"Shoes",price:89,image:"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500"},
  {id:2,name:"Denim Jacket",category:"Clothes",price:120,image:"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500"},
  {id:3,name:"Gold Necklace",category:"Jewelry",price:250,image:"https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=500"},
  {id:4,name:"Leather Bag",category:"Accessories",price:75,image:"https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=500"},
- {id:5,name:"White Sneakers",category:"Shoes",price:95,image:"https://images.unsplash.com/photo-1600269452121-4f2416e55c28?w=500"},
- {id:6,name:"Black T-Shirt",category:"Clothes",price:35,image:"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500"},
 ];
-let CART=[];
-let currentCat='All';
-let email=localStorage.getItem('email')||"";
-document.getElementById('email').value=email;
-if(email) document.getElementById('who').innerText=email;
-if(email){
-  let saved = localStorage.getItem('cart_'+email);
-  if(saved){ try{ CART=JSON.parse(saved); }catch{} }
+let CART=[]; let currentCat='All'; let user=null; let authMode='login';
+
+function init(){
+  let savedUser = localStorage.getItem('sf_user');
+  if(savedUser){ user=JSON.parse(savedUser); document.getElementById('who').innerText=user.email; checkAdmin(); }
+  let savedCart = localStorage.getItem('sf_cart_'+(user?.email||'guest'));
+  if(savedCart){ try{ CART=JSON.parse(savedCart); }catch{} }
+  render(PRODUCTS); updateCartUI();
+  fetch('/api/products').then(r=>r.json()).then(d=>{
+    let list = d.products||d; if(Array.isArray(list)&&list.length){ PRODUCTS=list; render(PRODUCTS); }
+  }).catch(()=>{});
 }
 function showToast(msg){ const t=document.getElementById('toast'); t.innerText=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2500); }
 function render(list){
  const g=document.getElementById('grid'); g.innerHTML="";
- list.forEach(p=>{ g.innerHTML+=`<div class="card"><img src="${p.image}"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>` })
+ list.forEach((p,idx)=>{ g.innerHTML+=`<div class="card" style="animation-delay:${idx*0.06}s"><img src="${p.image}"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>` })
 }
-function filterCat(cat,btn){
- currentCat=cat;
- document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));
- if(btn) btn.classList.add('active');
- render(cat==='All'?PRODUCTS:PRODUCTS.filter(x=>x.category===cat));
+function filterCat(cat,btn){ currentCat=cat; document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active')); if(btn) btn.classList.add('active'); render(cat==='All'?PRODUCTS:PRODUCTS.filter(x=>x.category===cat)); }
+function openAuth(){ document.getElementById('authModal').classList.add('show'); }
+function closeAuth(){ document.getElementById('authModal').classList.remove('show'); }
+function toggleAuth(){
+  authMode = authMode==='login'?'signup':'login';
+  document.getElementById('authTitle').innerText = authMode==='login'?'Login to Success Fits':'Create Account';
+  document.getElementById('a_name').style.display = authMode==='signup'?'block':'none';
+  document.getElementById('authSwitch').innerText = authMode==='login'?'Need account? Sign up':'Have account? Login';
 }
-render(PRODUCTS); updateCartUI();
+async function doAuth(){
+  let name=document.getElementById('a_name').value, email=document.getElementById('a_email').value.trim().toLowerCase(), pass=document.getElementById('a_pass').value;
+  if(!email||!pass) return alert('Fill email & password');
+  if(authMode==='signup'&&!name) return alert('Enter full name');
+  document.getElementById('authMsg').innerText='Loading...';
+  let url = authMode==='signup'?'/api/auth/signup':'/api/auth/login';
+  let res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
+  let data = await res.json();
+  if(data.ok||data.user){
+    if(authMode==='signup'){ document.getElementById('authMsg').innerText='Account created! Now login'; toggleAuth(); }
+    else{
+      user=data.user; localStorage.setItem('sf_user',JSON.stringify(user)); document.getElementById('who').innerText=user.email; checkAdmin(); closeAuth(); showToast('Welcome '+user.email);
+      // merge cart
+      let old = localStorage.getItem('sf_cart_guest'); if(old){ let g=JSON.parse(old); CART=[...CART,...g]; saveCart(); }
+    }
+  } else { document.getElementById('authMsg').innerText=data.error||'Error'; }
+}
+function checkAdmin(){ if(user?.email===ADMIN_EMAIL) document.getElementById('admin').style.display='block'; else document.getElementById('admin').style.display='none'; }
+function logout(){ localStorage.setItem('sf_cart_'+(user?.email||'guest'),JSON.stringify(CART)); localStorage.removeItem('sf_user'); user=null; document.getElementById('who').innerText='not logged'; document.getElementById('admin').style.display='none'; showToast('Logged out'); }
 
-async function login(){
- email=document.getElementById('email').value.trim();
- if(!email) return alert('Enter email');
- localStorage.setItem('email',email);
- document.getElementById('who').innerText=email;
- let saved = localStorage.getItem('cart_'+email);
- if(saved){ try{ CART=JSON.parse(saved); }catch{} updateCartUI(); }
- document.getElementById('status').innerText='Syncing...';
- try{
-  let r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-  let j=await r.json();
-  let serverCart = j.cart||[];
-  let toPush = CART.filter(id => !serverCart.includes(id));
-  for(let id of toPush){
-    await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
-  }
-  CART = [...new Set([...serverCart,...CART])];
-  localStorage.setItem('cart_'+email, JSON.stringify(CART));
-  updateCartUI();
-  document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
-  showToast(`Synced! ${CART.length} items`);
- }catch(e){
-  document.getElementById('status').innerText=`Offline - ${CART.length} items`;
- }
+function saveCart(){ localStorage.setItem('sf_cart_'+(user?.email||'guest'), JSON.stringify(CART)); updateCartUI(); }
+function addToCart(id){
+  if(!user){ openAuth(); return showToast('Login first'); }
+  let prod=PRODUCTS.find(p=>p.id==id); let exist=CART.find(c=>c.id==id);
+  if(exist) exist.qty++; else CART.push({...prod,qty:1});
+  saveCart(); showToast(prod.name+' added • '+CART.length+' items'); openCart();
 }
-function logout(){ 
-  localStorage.setItem('cart_'+email, JSON.stringify(CART)); 
-  localStorage.removeItem('email'); 
-  email=""; CART=[]; updateCartUI(); 
-  document.getElementById('who').innerText="not logged"; 
-  document.getElementById('email').value=""; 
-  document.getElementById('status').innerText="Logged out"; 
-  showToast('Logged out'); 
-}
-
-async function addToCart(id){
- if(!email){ alert('Login first'); return; }
- const prod=PRODUCTS.find(p=>p.id===id);
- if(CART.includes(id)){ showToast('Already in cart'); return; }
- CART.push(id);
- updateCartUI();
- localStorage.setItem('cart_'+email, JSON.stringify(CART));
- document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
- showToast(`${prod.name} added`);
- try{ 
-   let res = await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})});
-   let data = await res.json();
-   let count = data.cart ? data.cart.length : CART.length;
-   document.getElementById('status').innerText=`Logged in! Cart synced: ${count}`;
- }catch{}
-}
-
 function updateCartUI(){
- document.getElementById('count').innerText=CART.length;
- document.getElementById('cartCount2').innerText=CART.length;
- const list=document.getElementById('cartList'); list.innerHTML="";
- let total=0;
- CART.forEach((pid,idx)=>{
-   const p=PRODUCTS.find(x=>x.id===pid)||{name:'Item '+pid,price:0,image:''};
-   total+=p.price;
-   list.innerHTML+=`<div class="cartItem"><img src="${p.image}"><div style="flex:1"><div>${p.name}</div><div style="color:#ff2d55">$${p.price}</div></div><button onclick="removeItem(${idx})">X</button></div>`;
+ document.getElementById('count').innerText=CART.reduce((s,c)=>s+c.qty,0);
+ document.getElementById('cartCount2').innerText=CART.reduce((s,c)=>s+c.qty,0);
+ const list=document.getElementById('cartList'); list.innerHTML=""; let total=0;
+ CART.forEach((p,idx)=>{
+   total+=p.price*p.qty;
+   list.innerHTML+=`<div class="cartItem"><img src="${p.image}"><div style="flex:1"><div style="font-weight:800">${p.name}</div><div style="color:#ff2d55">$${p.price}</div><div class="qty"><button onclick="changeQty(${idx},-1)">-</button><span>${p.qty}</span><button onclick="changeQty(${idx},1)">+</button></div></div><button onclick="removeItem(${idx})" style="background:#222;padding:6px 10px;border-radius:8px;border:none;color:#fff">✕</button></div>`;
  });
- if(CART.length>0) list.innerHTML+=`<div style="margin-top:10px;font-weight:800">Total: $${total}</div>`;
- else list.innerHTML=`<div style="color:#888">Cart empty</div>`;
+ document.getElementById('c_total').innerText='$'+total;
+ if(CART.length==0) list.innerHTML=`<div style="color:#888;text-align:center;margin-top:30px">Your cart is empty<br>Add some drip 🛒</div>`;
 }
-async function removeItem(index){
- CART.splice(index,1);
- updateCartUI();
- localStorage.setItem('cart_'+email, JSON.stringify(CART));
- document.getElementById('status').innerText=`Logged in! Cart synced: ${CART.length}`;
- try{
-   await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-   for(let id of CART){ await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,product_id:id})}); }
- }catch{}
- showToast('Removed');
-}
-async function clearAll(){
- CART=[]; updateCartUI(); 
- localStorage.setItem('cart_'+email, JSON.stringify(CART));
- document.getElementById('status').innerText=`Logged in! Cart synced: 0`;
- try{ await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); }catch{}
- showToast('Cart cleared'); closeCart();
-}
+function changeQty(i,d){ CART[i].qty=Math.max(1,CART[i].qty+d); saveCart(); }
+function removeItem(i){ CART.splice(i,1); saveCart(); showToast('Removed'); }
+function clearAll(){ CART=[]; saveCart(); showToast('Cart cleared'); }
 function openCart(){ document.getElementById('cartDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
 function closeCart(){ document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
-fetch('/api/products').then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length){ PRODUCTS=d; render(PRODUCTS);} }).catch(()=>{});
+
+function doCheckout(){
+  if(!user) return openAuth();
+  let name=document.getElementById('c_name').value, addr=document.getElementById('c_address').value, phone=document.getElementById('c_phone').value;
+  if(!name||!addr||!phone) return alert('Please fill Full Name, Address & Phone - proper form filling required');
+  let total = CART.reduce((s,c)=>s+c.price*c.qty,0);
+  if(CART.length==0) return alert('Cart empty');
+  showToast('Order placed! Total $'+total);
+  // send to backend
+  fetch('/api/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,name,address:addr,phone,items:CART,total})}).catch(()=>{});
+  CART=[]; saveCart(); closeCart();
+}
+
+async function addProduct(){
+  let name=document.getElementById('p_name').value, price=document.getElementById('p_price').value, cat=document.getElementById('p_cat').value, image=document.getElementById('p_image').value;
+  if(!name||!price) return alert('Fill name & price');
+  document.getElementById('adminMsg').innerText='Adding...';
+  let res = await fetch('/api/products',{method:'POST',headers:{'Content-Type':'application/json','x-admin-email':user.email},body:JSON.stringify({name,price:Number(price),category:cat,image})});
+  let d=await res.json();
+  if(res.ok){ document.getElementById('adminMsg').innerText='Added!'; PRODUCTS.push(d.product||{id:Date.now(),name,price,category:cat,image}); render(PRODUCTS); }
+  else document.getElementById('adminMsg').innerText=d.error||'Not authorized (only admin)';
+}
+init();
 </script>
 </body>
 </html>
