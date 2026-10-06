@@ -1,105 +1,31 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Admin - Success Fits SECURE</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
-body{background:#000;color:#fff;padding:15px}
-.card{background:#111;padding:14px;margin:10px 0;border-radius:16px;border:1px solid #222;animation:pop.4s ease both;transition:.3s}
-.card:hover{transform:translateY(-3px);border-color:#ff2d55}
-input{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff;font-size:15px}
-button{width:100%;padding:13px;background:#fff;color:#000;border:none;border-radius:12px;margin-top:8px;font-weight:900;cursor:pointer;transition:.2s}
-button:active{transform:scale(.96)}
-.del{background:#ff2d55;color:#fff;width:auto;padding:8px 16px;border-radius:8px;margin-top:8px}
-@keyframes pop{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
-#loginBox{background:#111;padding:20px;border-radius:20px;max-width:380px;margin:60px auto;animation:pop.5s}
-.hidden{display:none}
-.badge{background:#ff2d55;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800}
-</style>
-</head>
-<body>
-<div id="loginBox">
-<h2 style="font-weight:900">🔐 Secure Admin Login</h2>
-<p style="color:#888;font-size:13px;margin:8px 0">Only admin: successbrownson222@gmail.com</p>
-<input id="email" placeholder="Admin Email" value="successbrownson222@gmail.com">
-<input id="pass" type="password" placeholder="Password">
-<button onclick="login()" style="background:#ff2d55;color:#fff">Login Securely</button>
-<p id="lmsg" style="font-size:13px;margin-top:8px;color:#0f0"></p>
-</div>
-
-<div id="dash" class="hidden">
-<h2>SUCCESS FITS Admin <span class="badge">SECURE</span> <button onclick="logout()" style="width:auto;float:right;background:#222;color:#fff;padding:8px 14px">Logout</button></h2>
-<p style="color:#888;font-size:13px">Logged as <b id="who"></b></p>
-<hr style="margin:15px 0;border-color:#222">
-<h3>Add Product</h3>
-<input id="name" placeholder="Product Name">
-<input id="price" type="number" placeholder="Price e.g. 89">
-<input id="image" placeholder="Image URL">
-<input id="category" placeholder="Category: Shoes, Clothes, Jewelry">
-<button onclick="addProduct()" style="background:#ff2d55;color:#fff">+ Add Product (Animated)</button>
-<p id="msg" style="font-weight:800;margin-top:8px"></p>
-<hr style="margin:15px 0;border-color:#222">
-<h3>All Products <button onclick="load()" style="width:auto;padding:6px 14px;background:#222;color:#fff">Refresh</button></h3>
-<div id="list">Loading...</div>
-</div>
-
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Secure</title>
+<style>*{box-sizing:border-box;font-family:system-ui}body{background:#000;color:#fff;padding:15px}.box{background:#111;padding:20px;border-radius:20px;max-width:380px;margin:50px auto}input{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff}button{width:100%;padding:13px;border:none;border-radius:12px;font-weight:900;margin-top:8px;cursor:pointer}.red{background:#ff2d55;color:#fff}.white{background:#fff;color:#000}.card{background:#111;padding:12px;margin:8px 0;border-radius:12px;border:1px solid #222}.hidden{display:none}</style></head><body>
+<div id="loginBox" class="box"><h2>🔐 Secure Admin Login</h2><p style="color:#888;font-size:13px">Only: successbrownson222@gmail.com</p>
+<input id="email" value="successbrownson222@gmail.com"><input id="pass" type="password" placeholder="Password e.g. admine123">
+<button class="red" onclick="login()">Login Securely</button>
+<button class="white" onclick="signup()">First time? Create Admin Account</button>
+<p id="msg" style="font-size:13px;margin-top:8px;color:#0f0;white-space:pre-wrap"></p></div>
+<div id="dash" class="box hidden" style="max-width:500px"><h3>Admin Dashboard <button onclick="logout()" style="width:auto;float:right;background:#222;color:#fff;padding:6px 12px">Out</button></h3><p id="who" style="color:#888"></p><hr style="margin:10px 0;border-color:#222"><input id="name" placeholder="Product Name"><input id="price" type="number" placeholder="Price"><input id="image" placeholder="Image URL"><input id="category" placeholder="Category"><button class="red" onclick="addProduct()">Add Product</button><p id="msg2"></p><div id="list"></div></div>
 <script>
-let ADMIN_EMAIL="";
-const API="";
-function showToast(m){ alert(m); }
-
+let ADMIN="";
+async function api(path,body){ try{ let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); }catch(e){ return {error:e.message} } }
 async function login(){
-  let email=document.getElementById('email').value.trim().toLowerCase();
-  let pass=document.getElementById('pass').value;
-  if(!email||!pass) return alert('Fill email & password');
-  document.getElementById('lmsg').innerText='Checking...';
-  let r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
-  let d=await r.json();
-  if(d.ok&&d.user){
-    if(d.user.email!== 'successbrownson222@gmail.com' && d.user.role!=='admin'){
-      document.getElementById('lmsg').innerText='❌ Not admin account';
-      return;
-    }
-    ADMIN_EMAIL=d.user.email;
-    localStorage.setItem('admin_user', JSON.stringify(d.user));
-    document.getElementById('who').innerText=ADMIN_EMAIL;
-    document.getElementById('loginBox').classList.add('hidden');
-    document.getElementById('dash').classList.remove('hidden');
-    load();
-  } else document.getElementById('lmsg').innerText=d.error||'Login failed';
+ document.getElementById('msg').innerText='Checking...';
+ let email=document.getElementById('email').value.trim().toLowerCase(), pass=document.getElementById('pass').value;
+ let d=await api('/api/auth/login',{email,password:pass});
+ if(d.ok){ ADMIN=email; localStorage.setItem('admin',JSON.stringify(d.user)); document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=email+' ('+d.user.role+')'; load(); document.getElementById('msg').innerText=''; }
+ else document.getElementById('msg').innerText='❌ '+(d.error||'Failed');
 }
-function logout(){ localStorage.removeItem('admin_user'); location.reload(); }
-
-async function load(){
-  try{
-    let r=await fetch('/api/products'); let data=await r.json(); let arr=Array.isArray(data)?data:(data.products||[]);
-    document.getElementById('list').innerHTML = arr.map((p,i)=>`
-      <div class="card" style="animation-delay:${i*0.05}s">
-        <img src="${p.image}" style="width:100%;height:120px;object-fit:cover;border-radius:10px;margin-bottom:8px">
-        <b>${p.name}</b> - <span style="color:#ff2d55">$${p.price}</span><br>
-        <small style="color:#888">${p.category||''} | ID:${p.id}</small><br>
-        <button class="del" onclick="delProduct(${p.id})">Delete</button>
-      </div>
-    `).join('')||'No products';
-  }catch(e){ document.getElementById('list').innerText='Error: '+e }
+async function signup(){
+ document.getElementById('msg').innerText='Creating admin account...';
+ let email=document.getElementById('email').value.trim().toLowerCase(), pass=document.getElementById('pass').value;
+ if(pass.length<6) return document.getElementById('msg').innerText='Password must be 6+ chars';
+ let d=await api('/api/auth/signup',{email,password:pass,name:'Admin'});
+ document.getElementById('msg').innerText= d.ok?'✅ Created! Now click Login Securely':'❌ '+(d.error||'Error');
 }
-async function addProduct(){
-  let body={name:document.getElementById('name').value.trim(),price:parseInt(document.getElementById('price').value),image:document.getElementById('image').value.trim(),category:document.getElementById('category').value.trim()||'General',admin_email:ADMIN_EMAIL,adminEmail:ADMIN_EMAIL};
-  if(!body.name||!body.price){ alert('Enter name & price'); return; }
-  document.getElementById('msg').innerText='Adding...';
-  let r=await fetch('/api/admin/add-product',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  let d=await r.json();
-  document.getElementById('msg').innerText=d.success?'✅ Added ID:'+d.id:'❌ '+(d.error||JSON.stringify(d));
-  if(d.success){ load(); document.getElementById('name').value=''; document.getElementById('price').value=''; }
-}
-async function delProduct(id){
-  if(!confirm('Delete '+id+'?')) return;
-  let r=await fetch(`/api/admin/delete-product?product_id=${id}&admin_email=${encodeURIComponent(ADMIN_EMAIL)}`,{method:'POST'});
-  let d=await r.json(); alert(JSON.stringify(d)); if(d.success) load();
-}
-// auto-login
-let saved=localStorage.getItem('admin_user'); if(saved){ try{ let u=JSON.parse(saved); ADMIN_EMAIL=u.email; document.getElementById('who').innerText=ADMIN_EMAIL; document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); load(); }catch{} }
-</script>
-</body>
-</html>
+function logout(){ localStorage.removeItem('admin'); location.reload(); }
+async function load(){ let r=await fetch('/api/products'); let j=await r.json(); let arr=Array.isArray(j)?j:j.products||[]; document.getElementById('list').innerHTML=arr.map(p=>`<div class="card"><img src="${p.image}" style="width:100%;height:100px;object-fit:cover;border-radius:8px"><b>${p.name}</b> $${p.price}<br><button onclick="del(${p.id})" style="width:auto;background:red;color:#fff;padding:5px 12px">Delete</button></div>`).join(''); }
+async function addProduct(){ let b={name:document.getElementById('name').value,price:parseInt(document.getElementById('price').value),image:document.getElementById('image').value,category:document.getElementById('category').value,admin_email:ADMIN}; let r=await fetch('/api/admin/add-product',{method:'POST',headers:{'Content-Type':'application/json','x-admin-email':ADMIN},body:JSON.stringify(b)}); let d=await r.json(); document.getElementById('msg2').innerText=d.success?'✅ Added':'❌ '+(d.error); if(d.success) load(); }
+async function del(id){ if(!confirm('Delete '+id))return; let r=await fetch(`/api/admin/delete-product?product_id=${id}&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'}); let d=await r.json(); alert(JSON.stringify(d)); load(); }
+let s=localStorage.getItem('admin'); if(s){ try{ let u=JSON.parse(s); ADMIN=u.email; document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=u.email; load(); }catch{} }
+</script></body></html>
