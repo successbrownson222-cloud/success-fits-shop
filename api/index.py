@@ -2,12 +2,46 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import os, pathlib
+import bcrypt,os, pathlib
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+@app.post("/api/auth/signup")
+def signup(data: dict):
+    email = data.get("email","").lower().strip()
+    password = data.get("password","")
+    name = data.get("name","")
+    conn = psycopg2.connect(os.environ.get("POSTGRES_URL"))
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    try:
+        cur.execute("INSERT INTO users (email,password,name) VALUES (%s,%s,%s)", (email, hashed, name))
+        conn.commit()
+        return {"ok":True}
+    except:
+        return {"error":"Email already exists"}
+    finally:
+        cur.close(); conn.close()
+
+@app.post("/api/auth/login")
+def login(data: dict):
+    email = data.get("email","").lower().strip()
+    password = data.get("password","")
+    conn = psycopg2.connect(os.environ.get("POSTGRES_URL"))
+    cur = conn.cursor()
+    cur.execute("SELECT password, name, role FROM users WHERE email=%s", (email,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return {"error":"User not found"}
+    if bcrypt.checkpw(password.encode(), row[0].encode()):
+        return {"ok":True, "user":{"email":email, "name":row[1], "role":row[2]}}
+    return {"error":"Wrong password"}
 
 def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
