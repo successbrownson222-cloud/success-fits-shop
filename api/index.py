@@ -74,30 +74,27 @@ def signup(data: AuthReq):
 
 @app.post("/api/auth/login")
 def auth_login(data: AuthReq):
-    email = clean_email(data.email)
-    conn = get_conn()
-    if not conn: return {"error":"DB error"}
-    cur = conn.cursor()
-    cur.execute("SELECT password, name, role FROM users WHERE LOWER(email)=%s", (email,))
-    row = cur.fetchone()
-    cur.close(); conn.close()
-    if not row: return {"error":"User not found, sign up first"}
-    if bcrypt.checkpw(data.password.encode(), row['password'].encode()):
-        return {"ok":True, "user":{"email":email, "name":row['name'], "role":row['role']}}
-    return {"error":"Wrong password"}
-
-# --- FRONTEND FILE FINDER ---
-def find_frontend_file(name: str):
-    possible_roots = [
-        pathlib.Path(__file__).parent.parent / "frontend",
-        pathlib.Path.cwd() / "frontend",
-        pathlib.Path("/vercel/path0/frontend"),
-        pathlib.Path("frontend"),
-    ]
-    for root in possible_roots:
-        p = root / name
-        if p.exists(): return str(p)
-    return None
+    try:
+        email = clean_email(data.email)
+        conn = get_conn()
+        if not conn:
+            return {"error":"DB not connected - check POSTGRES_URL"}
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+        cur.execute("SELECT password, name, role FROM users WHERE LOWER(email)=%s", (email,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {"error":"User not found - please click 'Create Admin Account' first"}
+        stored_pw = row['password'] if isinstance(row, dict) else row[0]
+        name = row['name'] if isinstance(row, dict) else row[1]
+        role = row['role'] if isinstance(row, dict) else row[2]
+        if bcrypt.checkpw(data.password.encode(), stored_pw.encode()):
+            return {"ok":True, "user":{"email":email, "name":name, "role":role}}
+        return {"error":"Wrong password"}
+    except Exception as e:
+        print(f"Login error: {e}")
+        return {"error": f"Login error: {str(e)}"}
 
 ADMIN_HTML_PATH = find_frontend_file("admin.html")
 INDEX_HTML_PATH = find_frontend_file("index.html")
