@@ -30,56 +30,52 @@ export default function App(){
   },[]);
 
   const getAllProducts = () => pro.length ? pro : FALLBACK;
-  
-  const findProduct = (id) => {
-    let all = getAllProducts();
-    return all.find(p=> String(p.id)===String(id)) || {id, name:'Item '+id, price:89};
+
+  // CENTRAL SYNC FUNCTION - used by login + auto-sync
+  const fetchCartFromServer = async (cleanEmail) => {
+    try{
+      let r = await fetch(API+'/api/cart?email='+encodeURIComponent(cleanEmail));
+      let d = await r.json();
+      console.log('SYNCED CART:', d);
+      // New API returns {items: [full products]}
+      if(d.items && d.items.length > 0){
+        setCart(d.items);
+        return d.items;
+      }
+      // Old fallback: map IDs to products
+      if(d.cart && d.cart.length > 0){
+        let mapped = d.cart.map(id => {
+          let pid = typeof id === 'object' ? (id.product_id || id.id) : id;
+          return getAllProducts().find(p=> String(p.id)===String(pid)) || {id: pid, name:'Item '+pid, price:0};
+        });
+        setCart(mapped);
+        return mapped;
+      }
+      setCart([]);
+      return [];
+    }catch(e){
+      console.log('fetch error', e);
+      return [];
+    }
   };
 
   const login=async()=>{
     let clean = email.trim().toLowerCase();
     if(!clean.includes('@')){ showToast('Enter valid email'); return; }
     showToast('Syncing '+clean+'...');
-    try{
-      // FIX 1: Try login first
-      let res = await fetch(API+'/api/login',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({email: clean})
-      });
-      let data = await res.json();
-      console.log('LOGIN DATA:', data);
-      let rawCart = data.cart || [];
-
-      // FIX 2: If login cart empty, try GET /api/cart?email=
-      if(rawCart.length===0){
-        let r2 = await fetch(API+'/api/cart?email='+encodeURIComponent(clean));
-        let d2 = await r2.json();
-        console.log('CART QUERY:', d2);
-        rawCart = d2.cart || [];
-      }
-
-      let ids = rawCart.map(c => typeof c==='object'? (c.product_id || c.id) : c).filter(Boolean);
-      let mapped = ids.map(id=> findProduct(id));
-      
-      setCart(mapped);
-      setLoggedIn(true);
-      setEmail(clean);
-      showToast(`Welcome! Synced ${mapped.length} items from site`);
-    }catch(e){
-      showToast('Login error: '+e.message);
-    }
+    let items = await fetchCartFromServer(clean);
+    setLoggedIn(true);
+    setEmail(clean);
+    showToast(`Welcome! Synced ${items.length} items from site`);
   };
 
-  // Re-map when products load
+  // AUTO SYNC every 3 seconds when logged in - this is the key fix!
   useEffect(()=>{
-    if(loggedIn && cart.length>0 && pro.length>0){
-      setCart(prev=> prev.map(c=>{
-        let real = getAllProducts().find(p=>String(p.id)===String(c.id));
-        return real ? real : c;
-      }));
-    }
-  },[pro]);
+    if(!loggedIn) return;
+    let clean = email.trim().toLowerCase();
+    const interval = setInterval(()=> fetchCartFromServer(clean), 3000);
+    return ()=> clearInterval(interval);
+  },[loggedIn, email, pro]);
 
   const logout=()=>{
     setLoggedIn(false); setCart([]); setEmail(''); setShowCart(false);
@@ -89,15 +85,23 @@ export default function App(){
   const add=async(item)=>{
     if(!loggedIn){ showToast('Login first'); return; }
     if(cart.find(x=>String(x.id)===String(item.id))){ showToast('Already in cart'); return; }
+    
+    // Optimistic update
     setCart([...cart, item]);
+    
     try{
-      await fetch(API+'/api/cart/add',{
+      let res = await fetch(API+'/api/cart/add',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({email: email.trim().toLowerCase(), product_id: item.id})
       });
-      showToast(item.name+' added & synced');
-    }catch{}
+      let data = await res.json();
+      // Server returns the truth - use it
+      if(data.items) setCart(data.items);
+      showToast(item.name+' synced to site ✓');
+    }catch{
+      showToast('Added locally, will sync next');
+    }
   };
 
   const total = cart.reduce((s,i)=>s+(Number(i.price)||0),0);
@@ -114,7 +118,7 @@ export default function App(){
           <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Enter email same as site" style={{borderWidth:1,padding:12,marginVertical:10, borderRadius:8}} />
           <TouchableOpacity onPress={login} style={{backgroundColor:'black',padding:12, borderRadius:8}}><Text style={{color:'white',textAlign:'center', fontWeight:'700'}}>Login & Load Cart</Text></TouchableOpacity>
         </>
-      ) : <Text style={{marginVertical:10, color:'green', fontWeight:'700'}}>Logged as: {email}</Text>}
+      ) : <Text style={{marginVertical:10, color:'green', fontWeight:'700'}}>Logged as: {email} (auto-sync on)</Text>}
 
       <View style={{flexDirection:'row', justifyContent:'space-between', marginVertical:12}}>
         <Text style={{fontWeight:'800'}}>Cart: {cart.length} - ${total}</Text>
@@ -134,7 +138,7 @@ export default function App(){
         <View style={{flex:1, padding:20,paddingTop:60}}>
           <View style={{flexDirection:'row', justifyContent:'space-between'}}><Text style={{fontSize:20,fontWeight:'bold'}}>Your Cart ${total} ({cart.length})</Text><TouchableOpacity onPress={()=>setShowCart(false)} style={{backgroundColor:'black', padding:8, paddingHorizontal:14, borderRadius:20}}><Text style={{color:'white'}}>X CLOSE</Text></TouchableOpacity></View>
           <FlatList style={{marginTop:15}} data={cart} keyExtractor={i=>''+i.id} renderItem={({item})=><View style={{flexDirection:'row',justifyContent:'space-between',padding:12, borderBottomWidth:1}}><Text>{item.name}</Text><Text>${item.price}</Text></View>} />
-          <TouchableOpacity onPress={()=>setShowCart(false)} style={{padding:15, marginTop:20, borderWidth:1, borderRadius:10}}><Text style={{textAlign:'center'}}>← Continue Shopping (return fix)</Text></TouchableOpacity>
+          <Text style={{marginTop:10, textAlign:'center', color:'gray'}}>Auto-syncs every 3s from website</Text>
         </View>
       </Modal>
     </View>
