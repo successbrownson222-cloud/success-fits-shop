@@ -204,6 +204,33 @@ def get_orders(email: str = ""):
         return rows
     except Exception as e: return {"error": str(e)}
 
+@app.delete("/api/orders")
+def delete_order(id: int, email: str = ""):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        clean = clean_email(email)
+        if is_admin(email):
+            cur.execute("DELETE FROM orders WHERE id=%s", (id,))
+        else:
+            cur.execute("DELETE FROM orders WHERE id=%s AND email=%s", (id, clean))
+        conn.commit(); cur.close(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.api_route("/api/orders/clear", methods=["POST","DELETE"])
+def clear_orders(email: str = ""):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        if is_admin(email):
+            cur.execute("DELETE FROM orders")
+        else:
+            cur.execute("DELETE FROM orders WHERE email=%s", (clean_email(email),))
+        conn.commit(); cur.close(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/admin")
 def admin_page():
     if ADMIN_HTML: return FileResponse(ADMIN_HTML)
