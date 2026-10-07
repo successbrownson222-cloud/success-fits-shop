@@ -88,7 +88,12 @@ def signup(data: AuthReq):
     if not conn: return {"error": "DB not connected"}
     try:
         cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE,
+cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
+cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
+cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
+
+ password TEXT, name TEXT, role TEXT DEFAULT 'user')")
         role = "admin" if email == ADMIN_EMAIL else "user"
         cur.execute("INSERT INTO users (email,password,name,role) VALUES (%s,%s,%s,%s)", (email, hash_pw(data.password), data.name, role))
         conn.commit()
