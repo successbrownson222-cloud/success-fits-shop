@@ -10,7 +10,6 @@ try:
     import bcrypt
     HAS_BCRYPT = True
 except:
-    import hashlib
     HAS_BCRYPT = False
 
 app = FastAPI()
@@ -51,9 +50,6 @@ def check_pw(pw: str, hashed: str):
 
 class AuthReq(BaseModel):
     email: str; password: str; name: str = ""
-
-class CartAddReq(BaseModel):
-    email: str; product_id: int
 
 class ProductReq(BaseModel):
     name: str; price: int; image: str = ""; category: str = "General"
@@ -105,18 +101,13 @@ def auth_login(data: AuthReq):
         if not conn: return {"error": "DB not connected"}
         cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
-        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
-        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
-        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
         cur.execute("SELECT password, name, role FROM users WHERE LOWER(email)=%s", (email,))
         row = cur.fetchone()
         cur.close(); conn.close()
-        if not row: return {"error": "User not found - click Create Admin Account first"}
-        pw = row.get('password'); name = row.get('name'); role = row.get('role')
-        if not pw: return {"error": "Old account - please sign up again with password"}
-        if check_pw(data.password, pw):
-            return {"ok": True, "user": {"email": email, "name": name, "role": role}}
-        return {"error": "Wrong password"}
+        if not row: return {"error": "User not found - sign up first"}
+        if not check_pw(data.password, row.get('password') or ""):
+            return {"error": "Wrong password"}
+        return {"ok": True, "user": {"email": email, "name": row.get('name'), "role": row.get('role')}}
     except Exception as e: return {"error": f"Server error: {e}"}
 
 # --- PRODUCTS ---
@@ -154,60 +145,45 @@ def del_product(request: Request):
     if not is_admin(a_email): return JSONResponse({"error":"Not authorized"}, status_code=401)
     try:
         conn = get_conn(); cur = conn.cursor()
-        cur.execute("DELETE FROM products WHERE id=%s", (int(pid),)); conn.commit(); cur.close(); conn.close()
+        cur.execute("DELETE FROM products WHERE id=%s", (int(pid),))
+        conn.commit(); cur.close(); conn.close()
         return {"success": True}
     except Exception as e: return {"error": str(e)}
 
-# --- CART (for mobile app) ---
-@app.post("/api/cart/add")
-def cart_add(req: CartAddReq):
-    try:
-        conn = get_conn(); cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT, product_id INT)")
-        cur.execute("INSERT INTO carts (email, product_id) VALUES (%s,%s)", (clean_email(req.email), req.product_id))
-        conn.commit(); cur.close(); conn.close()
-        return {"ok": True}
-    except Exception as e: return {"error": str(e)}
-
-@app.get("/api/cart")
-def cart_list(email: str):
-    try:
-        conn = get_conn(); cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT, product_id INT)")
-        cur.execute("SELECT p.* FROM carts c JOIN products p ON c.product_id=p.id WHERE c.email=%s", (clean_email(email),))
-        rows = cur.fetchall(); cur.close(); conn.close()
-        return rows
-    except Exception as e: return {"error": str(e)}
-
-# --- ORDERS = CHECKOUT DASHBOARD ---
+# --- ORDERS ---
 @app.post("/api/orders")
 def create_order(req: OrderReq):
     try:
         conn = get_conn(); cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone TEXT")
         cur.execute("INSERT INTO orders (email,items,total,address,phone) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone))
         nid = cur.fetchone()['id']; conn.commit(); cur.close(); conn.close()
         return {"ok": True, "order_id": nid}
     except Exception as e: return {"error": str(e)}
 
 @app.get("/api/orders")
-def get_orders(email: str = ""):
+def get_orders(email: str = "", all: str = ""):
     try:
-        conn = get_conn(); cur = conn.cursor()
+        conn = get_conn()
+        if not conn: return []
+        cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-        if is_admin(email):
+        clean = clean_email(email)
+        if all == "true" and is_admin(email):
             cur.execute("SELECT * FROM orders ORDER BY id DESC")
         else:
-            cur.execute("SELECT * FROM orders WHERE email=%s ORDER BY id DESC", (clean_email(email),))
-        rows = cur.fetchall(); cur.close(); conn.close()
+            cur.execute("SELECT * FROM orders WHERE email=%s ORDER BY id DESC", (clean,))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
         return rows
     except Exception as e: return {"error": str(e)}
 
 @app.delete("/api/orders")
 def delete_order(id: int, email: str = ""):
     try:
-        conn = get_conn(); cur = conn.cursor()
+        conn = get_conn()
+        if not conn: return {"error": "DB not connected"}
+        cur = conn.cursor()
         clean = clean_email(email)
         if is_admin(email):
             cur.execute("DELETE FROM orders WHERE id=%s", (id,))
@@ -215,21 +191,21 @@ def delete_order(id: int, email: str = ""):
             cur.execute("DELETE FROM orders WHERE id=%s AND email=%s", (id, clean))
         conn.commit(); cur.close(); conn.close()
         return {"ok": True}
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception as e: return {"error": str(e)}
 
 @app.api_route("/api/orders/clear", methods=["POST","DELETE"])
 def clear_orders(email: str = ""):
     try:
-        conn = get_conn(); cur = conn.cursor()
+        conn = get_conn()
+        if not conn: return {"error": "DB not connected"}
+        cur = conn.cursor()
         if is_admin(email):
             cur.execute("DELETE FROM orders")
         else:
             cur.execute("DELETE FROM orders WHERE email=%s", (clean_email(email),))
         conn.commit(); cur.close(); conn.close()
         return {"ok": True}
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception as e: return {"error": str(e)}
 
 @app.get("/admin")
 def admin_page():
@@ -239,7 +215,7 @@ def admin_page():
 @app.get("/")
 def root_page():
     if INDEX_HTML: return FileResponse(INDEX_HTML)
-    return HTMLResponse("<h1>Success Fits Shop Running</h1>")
+    return HTMLResponse("<h1>Success Fits Running</h1>")
 
 @app.get("/{full_path:path}")
 def catch_all(full_path: str):
