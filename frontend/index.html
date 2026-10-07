@@ -21,7 +21,7 @@ input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#f
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .card{background:#111;border-radius:16px;overflow:hidden;padding:8px;animation:pop.5s both;transition:.3s}
 .card:hover{transform:translateY(-4px)}
-.card img{width:100%;height:120px;object-fit:cover;border-radius:10px}
+.card img{width:100%;height:120px;object-fit:cover;border-radius:10px;background:#222}
 .card h3{font-size:13px;margin:6px 0}
 .card p{color:#ff2d55;font-weight:800}
 .card button{width:100%;margin-top:6px;padding:10px;background:#fff;color:#000;border:none;border-radius:8px;font-weight:800}
@@ -30,7 +30,7 @@ input{flex:1;padding:12px;border-radius:8px;border:none;background:#222;color:#f
 #cartDrawer{position:fixed;top:0;right:-100%;width:90%;max-width:380px;height:100%;background:#0f0f0f;padding:20px;transition:.4s;z-index:100;overflow-y:auto;display:flex;flex-direction:column}
 #cartDrawer.open{right:0}
 .cartItem{display:flex;gap:10px;background:#1a1a1a;padding:10px;border-radius:12px;margin-bottom:8px;align-items:center}
-.cartItem img{width:55px;height:55px;border-radius:8px;object-fit:cover}
+.cartItem img{width:55px;height:55px;border-radius:8px;object-fit:cover;background:#222}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;z-index:90}
 .overlay.show{display:block}
 #authModal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:200}
@@ -66,7 +66,7 @@ footer{background:#0a0a0a;border-top:1px solid #222;padding:30px 20px;margin:30p
 <input id="c_address" placeholder="Delivery Address (Lagos)">
 <input id="c_phone" placeholder="Phone / WhatsApp Number">
 <div style="display:flex;justify-content:space-between;font-weight:900;font-size:18px;margin:10px 0"><span>Total:</span><span id="c_total">$0</span></div>
-<button onclick="doCheckout()" style="width:100%;background:#ff2d55;color:#fff;padding:14px;border:none;border-radius:12px;font-weight:900">Checkout • Place Order</button>
+<button id="checkoutBtn" onclick="doCheckout()" style="width:100%;background:#ff2d55;color:#fff;padding:14px;border:none;border-radius:12px;font-weight:900">Checkout • Place Order</button>
 <button onclick="clearAll()" style="width:100%;margin-top:8px;background:#222;color:#fff;padding:10px;border:none;border-radius:10px">Clear Cart</button>
 <div style="margin-top:10px;font-size:11px;color:#666;text-align:center">Pay on Delivery in Lagos • Transfer • Secure</div>
 </div>
@@ -76,8 +76,9 @@ footer{background:#0a0a0a;border-top:1px solid #222;padding:30px 20px;margin:30p
 
 <div class="top">
 <div style="flex:1"><div style="font-size:11px;color:#888">Logged in as</div><div id="who" style="font-weight:800;font-size:13px">not logged</div><div id="status" style="font-size:11px;color:#0f0">Logged out • <span id="orderCount">0 orders</span></div></div>
-<button class="btn login" onclick="openAuth()">Login / Signup</button>
-<button class="btn out" onclick="logout()">Out</button>
+<button class="btn login" id="loginBtn" onclick="openAuth()">Login / Signup</button>
+<button class="btn login" id="adminBtn" onclick="location.href='/admin'" style="display:none;background:#fff;color:#000">Admin</button>
+<button class="btn out" id="outBtn" onclick="logout()" style="display:none">Out</button>
 </div>
 
 <div class="filters">
@@ -89,7 +90,6 @@ footer{background:#0a0a0a;border-top:1px solid #222;padding:30px 20px;margin:30p
 </div>
 <div id="grid" class="grid"></div>
 
-<!-- UNIQUE FOOTER -->
 <footer>
   <h2 style="letter-spacing:2px;font-weight:900">SUCCESS FITS.</h2>
   <p style="color:#888;font-size:13px;margin:8px 0 16px;max-width:380px">Lagos-based premium drip. Shoes, hoodies, watches & bags. Worldwide shipping. Pay on delivery in Lagos.</p>
@@ -115,40 +115,90 @@ footer{background:#0a0a0a;border-top:1px solid #222;padding:30px 20px;margin:30p
 
 <script>
 let PRODUCTS=[]; let CART=[]; let user=null; let authMode='signup'; let deferredPrompt=null;
-const ADMIN_EMAIL="successbrownson222@gmail.com";
+const PLACEHOLDER = 'https://via.placeholder.com/300x300.png?text=SUCCESS+FITS';
 
 function init(){
- let savedUser=localStorage.getItem('sf_user'); if(savedUser){ try{ user=JSON.parse(savedUser); document.getElementById('who').innerText=user.email; document.getElementById('status').innerText='Logged in'; }catch{} }
- let savedCart=localStorage.getItem('sf_cart_'+(user?.email||'guest')); if(savedCart){ try{ CART=JSON.parse(savedCart); }catch{} }
- fetch('/api/products').then(r=>r.json()).then(d=>{ let arr=Array.isArray(d)?d:(d.products||d); if(arr&&arr.length){ PRODUCTS=arr; render(PRODUCTS); } }).catch(()=>{ PRODUCTS=[{id:1,name:"White sneakers",price:150,image:"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500",category:"Shoes"}]; render(PRODUCTS); });
- updateCartUI(); loadOrderCount();
+ let savedUser=localStorage.getItem('sf_user');
+ if(savedUser){ try{ user=JSON.parse(savedUser); }catch{} }
+ let savedCart=localStorage.getItem('sf_cart_'+(user?.email||'guest'));
+ if(savedCart){ try{ CART=JSON.parse(savedCart); }catch{} }
+ fetch('/api/products').then(r=>r.json()).then(d=>{
+   let arr=Array.isArray(d)?d:(d.products||d);
+   if(arr&&arr.length){ PRODUCTS=arr; render(PRODUCTS); }
+ }).catch(()=>{ PRODUCTS=[{id:1,name:"White sneakers",price:150,image:PLACEHOLDER,category:"Shoes"}]; render(PRODUCTS); });
+ updateCartUI(); updateTopBar(); loadOrderCount();
  if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
  window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt=e; });
 }
-function installApp(){ if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt.userChoice.then(c=>{ if(c.outcome==='accepted') showToast('App installed!'); deferredPrompt=null; }); } else { alert('To install: Chrome menu (⋮) > Add to Home Screen / Install App'); } }
+
+function installApp(){
+  if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt.userChoice.then(c=>{ if(c.outcome==='accepted') showToast('App installed!'); deferredPrompt=null; }); }
+  else { alert('To install: Chrome menu ⋮ > Add to Home Screen / Install App'); }
+}
+
 function showToast(m){ let t=document.getElementById('toast'); t.innerText=m; t.style.display='block'; setTimeout(()=>t.style.display='none',3000); }
+
 function render(list){
  let g=document.getElementById('grid'); g.innerHTML="";
- list.forEach((p,i)=>{ g.innerHTML+=`<div class="card" style="animation-delay:${i*0.04}s"><img src="${p.image}" loading="lazy"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>` })
+ list.forEach((p,i)=>{
+   let img = p.image || PLACEHOLDER;
+   g.innerHTML+=`<div class="card" style="animation-delay:${i*0.04}s"><img src="${img}" onerror="this.onerror=null;this.src='${PLACEHOLDER}'" loading="lazy"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>`;
+ });
 }
+
 function filterCat(cat,btn){ document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active')); if(btn)btn.classList.add('active'); render(cat==='All'?PRODUCTS:PRODUCTS.filter(x=>x.category===cat)); }
+
 function openAuth(){ document.getElementById('authModal').classList.add('show'); }
-function closeAuth(){ document.getElementById('authModal').classList.remove('show'); }
-function toggleAuth(){ authMode=authMode==='signup'?'login':'signup'; document.getElementById('authTitle').innerText=authMode==='signup'?'Create Account':'Login'; document.getElementById('a_name').style.display=authMode==='signup'?'block':'none'; document.getElementById('authSwitch').innerText=authMode==='signup'?'Have account? Login':'Need account? Signup'; }
+function closeAuth(){ document.getElementById('authModal').classList.remove('show'); document.getElementById('authMsg').innerText=''; }
+function toggleAuth(){ authMode=authMode==='signup'?'login':'signup'; document.getElementById('authTitle').innerText=authMode==='signup'?'Create Account':'Login'; document.getElementById('a_name').style.display=authMode==='signup'?'block':'none'; document.getElementById('authSwitch').innerText=authMode==='signup'?'Have account? Login':'Need account? Signup'; document.getElementById('authMsg').innerText=''; }
+
+function updateTopBar(){
+  const loginBtn = document.getElementById('loginBtn');
+  const adminBtn = document.getElementById('adminBtn');
+  const outBtn = document.getElementById('outBtn');
+  if(user){
+    document.getElementById('who').innerText = user.email;
+    document.getElementById('status').innerText = user.role==='admin'? 'Admin • Logged in' : 'Logged in';
+    loginBtn.style.display='none';
+    adminBtn.style.display = user.role==='admin'? 'block' : 'none';
+    outBtn.style.display='block';
+  } else {
+    document.getElementById('who').innerText='not logged';
+    document.getElementById('status').innerText='Logged out';
+    loginBtn.style.display='block';
+    adminBtn.style.display='none';
+    outBtn.style.display='none';
+  }
+}
+
 async function doAuth(){
  let name=document.getElementById('a_name').value.trim(), email=document.getElementById('a_email').value.trim().toLowerCase(), pass=document.getElementById('a_pass').value;
  if(!email||!pass) return alert('Fill email & password'); if(pass.length<6) return alert('Password min 6 chars');
- document.getElementById('authMsg').innerText='Loading...';
- let url=authMode==='signup'?'/api/auth/signup':'/api/auth/login';
- let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
- let d=await r.json();
- if(d.ok){
-   if(authMode==='signup'){ document.getElementById('authMsg').innerText='✅ Created! Now login'; toggleAuth(); showToast('Now login'); }
-   else{ user=d.user; localStorage.setItem('sf_user',JSON.stringify(user)); document.getElementById('who').innerText=user.email; document.getElementById('status').innerText='Logged in!'; closeAuth(); showToast('Welcome '+user.email); saveCart(); loadOrderCount(); }
- } else document.getElementById('authMsg').innerText='❌ '+(d.error||'Error');
+ document.getElementById('authMsg').innerText='Checking...';
+ try{
+   let url=authMode==='signup'?'/api/auth/signup':'/api/auth/login';
+   let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
+   let d=await r.json();
+   if(d.ok){
+     if(authMode==='signup'){
+       document.getElementById('authMsg').innerText='✅ Created! Now tap "Have account? Login"';
+       showToast('Account created, now login');
+     } else {
+       user=d.user; localStorage.setItem('sf_user',JSON.stringify(user));
+       closeAuth(); updateTopBar(); saveCart(); loadOrderCount(); showToast('Welcome '+user.email);
+     }
+   } else { document.getElementById('authMsg').innerText='❌ '+(d.error||'Error'); }
+ } catch(e){ document.getElementById('authMsg').innerText='❌ Network error, try again'; }
 }
-function logout(){ if(user) localStorage.setItem('sf_cart_'+user.email, JSON.stringify(CART)); localStorage.removeItem('sf_user'); user=null; CART=[]; document.getElementById('who').innerText='not logged'; document.getElementById('status').innerText='Logged out'; updateCartUI(); showToast('Logged out'); closeCart(); }
+
+function logout(){
+  if(user) localStorage.setItem('sf_cart_'+user.email, JSON.stringify(CART));
+  localStorage.removeItem('sf_user'); user=null; CART=[];
+  updateTopBar(); updateCartUI(); showToast('Logged out'); closeCart();
+}
+
 function saveCart(){ localStorage.setItem('sf_cart_'+(user?.email||'guest'), JSON.stringify(CART)); updateCartUI(); }
+
 function addToCart(id){
  if(!user){ openAuth(); return showToast('Please login first'); }
  let prod=PRODUCTS.find(p=>p.id==id); if(!prod) return;
@@ -156,29 +206,48 @@ function addToCart(id){
  saveCart(); showToast(prod.name+' added'); openCart();
  if(user) fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,product_id:id})}).catch(()=>{});
 }
+
 function updateCartUI(){
  let totalQty=CART.reduce((s,c)=>s+c.qty,0);
  document.getElementById('count').innerText=totalQty;
  document.getElementById('cartCount2').innerText=totalQty;
  document.getElementById('bottomCount').innerText=totalQty;
  let list=document.getElementById('cartList'); list.innerHTML=""; let total=0;
- CART.forEach((p,i)=>{ total+=p.price*p.qty; list.innerHTML+=`<div class="cartItem"><img src="${p.image}"><div style="flex:1"><div style="font-weight:800;font-size:13px">${p.name}</div><div style="color:#ff2d55">$${p.price} x ${p.qty}</div><div style="display:flex;gap:6px;margin-top:4px"><button onclick="changeQty(${i},-1)">-</button><span>${p.qty}</span><button onclick="changeQty(${i},1)">+</button></div></div><button onclick="removeItem(${i})" style="background:#222;border:none;color:#fff;padding:6px 10px;border-radius:6px">X</button></div>` });
+ CART.forEach((p,i)=>{
+   total+=p.price*p.qty;
+   let img = p.image || PLACEHOLDER;
+   list.innerHTML+=`<div class="cartItem"><img src="${img}" onerror="this.src='${PLACEHOLDER}'"><div style="flex:1"><div style="font-weight:800;font-size:13px">${p.name}</div><div style="color:#ff2d55">$${p.price} x ${p.qty}</div><div style="display:flex;gap:8px;margin-top:6px"><button onclick="changeQty(${i},-1)" style="width:28px;height:28px;border-radius:6px;border:none;background:#333;color:#fff">-</button><span style="padding:2px 6px">${p.qty}</span><button onclick="changeQty(${i},1)" style="width:28px;height:28px;border-radius:6px;border:none;background:#333;color:#fff">+</button></div></div><button onclick="removeItem(${i})" style="background:#222;border:none;color:#fff;padding:6px 10px;border-radius:6px">X</button></div>`
+ });
  document.getElementById('c_total').innerText='$'+total;
+ const checkoutBtn = document.getElementById('checkoutBtn');
+ checkoutBtn.disabled = CART.length===0;
+ checkoutBtn.style.opacity = CART.length===0? '0.4' : '1';
  if(CART.length==0) list.innerHTML='<div style="color:#888;text-align:center;margin-top:30px">Cart empty<br>Shop now 🛒</div>';
 }
+
 function changeQty(i,d){ CART[i].qty=Math.max(1,CART[i].qty+d); saveCart(); }
 function removeItem(i){ CART.splice(i,1); saveCart(); }
 function clearAll(){ CART=[]; saveCart(); showToast('Cart cleared'); }
 function openCart(){ document.getElementById('cartDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
 function closeCart(){ document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
-async function loadOrderCount(){ if(!user) return; try{ let r=await fetch('/api/orders?email='+encodeURIComponent(user.email)); let d=await r.json(); if(Array.isArray(d)) document.getElementById('orderCount').innerText=d.length+' orders'; document.getElementById('status').innerHTML='Logged in • <span onclick="viewOrders()" style="text-decoration:underline;cursor:pointer">'+(Array.isArray(d)?d.length:0)+' orders</span>'; }catch{} }
+
+async function loadOrderCount(){
+  if(!user) return;
+  try{
+    let r=await fetch('/api/orders?email='+encodeURIComponent(user.email));
+    let d=await r.json();
+    if(Array.isArray(d)) document.getElementById('orderCount').innerText=d.length+' orders';
+  }catch{}
+}
+
 async function viewOrders(){
  if(!user) return openAuth();
  let r=await fetch('/api/orders?email='+encodeURIComponent(user.email)); let orders=await r.json();
  if(!Array.isArray(orders)||!orders.length) return alert('No orders yet');
- let msg=orders.map(o=>`#${o.id} - $${o.total} - ${o.status} - ${o.created_at?.slice(0,10)}`).join('\n');
+ let msg=orders.map(o=>`#${o.id} - $${o.total} - ${o.status} - ${o.created_at?.slice(0,10)}\n${o.address||''}`).join('\n\n');
  alert('Your Orders:\n\n'+msg);
 }
+
 async function doCheckout(){
  if(!user) return openAuth();
  let name=document.getElementById('c_fullname').value.trim(), addr=document.getElementById('c_address').value.trim(), phone=document.getElementById('c_phone').value.trim();
@@ -186,10 +255,12 @@ async function doCheckout(){
  if(CART.length==0) return alert('Cart empty');
  let total=CART.reduce((s,c)=>s+c.price*c.qty,0);
  let items=JSON.stringify(CART.map(c=>c.name+' x'+c.qty).join(', '));
- let r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items,total,address:addr,phone})});
- let d=await r.json();
- if(d.ok){ showToast('Order #'+d.order_id+' placed! We will call you'); CART=[]; saveCart(); closeCart(); loadOrderCount(); }
- else alert(d.error||'Checkout failed');
+ try{
+   let r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items,total,address:addr,phone})});
+   let d=await r.json();
+   if(d.ok){ showToast('Order #'+d.order_id+' placed!'); CART=[]; saveCart(); closeCart(); loadOrderCount(); }
+   else alert(d.error||'Checkout failed');
+ } catch(e){ alert('Network error, try again'); }
 }
 init();
 </script>
