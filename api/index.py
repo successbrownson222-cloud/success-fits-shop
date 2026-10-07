@@ -6,14 +6,12 @@ import os, pathlib, json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-# Try bcrypt, fallback if not installed (prevents 500)
 try:
     import bcrypt
     HAS_BCRYPT = True
 except:
     import hashlib
     HAS_BCRYPT = False
-    print("bcrypt not found, using hashlib fallback")
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -21,14 +19,10 @@ ADMIN_EMAIL = "successbrownson222@gmail.com"
 
 def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
-    if not url:
-        print("No POSTGRES_URL set")
-        return None
+    if not url: return None
     try:
         return psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
-    except Exception as e:
-        print(f"DB connect failed: {e}")
-        return None
+    except: return None
 
 def clean_email(e): return e.strip().lower() if e else ""
 
@@ -44,18 +38,19 @@ def is_admin(email: str):
         row = cur.fetchone()
         cur.close(); conn.close()
         return row and row.get('role') == 'admin'
-    except:
-        return False
+    except: return False
 
 def hash_pw(pw: str):
     if HAS_BCRYPT:
         return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+    import hashlib
     return hashlib.sha256(pw.encode()).hexdigest()
 
 def check_pw(pw: str, hashed: str):
     if HAS_BCRYPT:
         try: return bcrypt.checkpw(pw.encode(), hashed.encode())
         except: return False
+    import hashlib
     return hashlib.sha256(pw.encode()).hexdigest() == hashed
 
 class AuthReq(BaseModel):
@@ -88,12 +83,10 @@ def signup(data: AuthReq):
     if not conn: return {"error": "DB not connected"}
     try:
         cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE,
-cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
-cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
-cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
-
- password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
         role = "admin" if email == ADMIN_EMAIL else "user"
         cur.execute("INSERT INTO users (email,password,name,role) VALUES (%s,%s,%s,%s)", (email, hash_pw(data.password), data.name, role))
         conn.commit()
@@ -115,6 +108,9 @@ def auth_login(data: AuthReq):
         if not conn: return {"error": "DB not connected - check POSTGRES_URL in Vercel env"}
         cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
         cur.execute("SELECT password, name, role FROM users WHERE LOWER(email)=%s", (email,))
         row = cur.fetchone()
         cur.close(); conn.close()
@@ -170,7 +166,7 @@ def del_product(request: Request):
 @app.get("/admin")
 def admin_page():
     if ADMIN_HTML: return FileResponse(ADMIN_HTML)
-    return HTMLResponse("<h1>Admin</h1><p>admin.html missing - check frontend folder</p>")
+    return HTMLResponse("<h1>Admin</h1><p>admin.html missing</p>")
 
 @app.get("/")
 def root_page():
