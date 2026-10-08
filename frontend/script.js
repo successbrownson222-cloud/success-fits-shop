@@ -1,0 +1,89 @@
+let PRODUCTS=[],CART=[],user=null,authMode='signup';
+const PH='https://via.placeholder.com/400x400.png?text=SUCCESS';
+const STATES={"Lagos":["Ikeja","Lekki","Yaba","Surulere","Ikorodu"],"Abuja FCT":["AMAC","Gwagwalada","Kuje"],"Oyo":["Ibadan North","Ibadan South"],"Rivers":["Port Harcourt","Obio-Akpor"],"Others":["Other"]};
+function init(){
+ let su=localStorage.getItem('sf_user'); if(su){ try{ user=JSON.parse(su);}catch{}}
+ let sc=localStorage.getItem('sf_cart_'+(user?.email||'guest')); if(sc){ try{ CART=JSON.parse(sc);}catch{}}
+ fetch('/api/products').then(r=>r.json()).then(d=>{ let a=Array.isArray(d)?d:(d.products||[]); PRODUCTS=a; render(a); });
+ updateAll(); loadOrderCount(); initStates();
+ let dt=document.getElementById('c_date'); if(dt) dt.min=new Date().toISOString().split('T')[0];
+}
+function initStates(){
+ let s=document.getElementById('c_state'); if(!s) return;
+ Object.keys(STATES).forEach(st=>{ let o=document.createElement('option'); o.value=st; o.textContent=st; s.appendChild(o); });
+}
+function loadLGAs(){
+ let st=document.getElementById('c_state').value; let lga=document.getElementById('c_lga');
+ lga.innerHTML='<option value="">Select LGA</option>';
+ (STATES[st]||[]).forEach(l=>{ let o=document.createElement('option'); o.value=l; o.textContent=l; lga.appendChild(o); });
+}
+function showToast(m){ let t=document.getElementById('toast'); t.innerText=m; t.style.display='block'; setTimeout(()=>t.style.display='none',2500); }
+function render(list){
+ let g=document.getElementById('grid'); g.innerHTML='';
+ if(!list.length){ g.innerHTML='<div style="grid-column:1/3;text-align:center;color:#666;padding:30px">No products</div>'; return; }
+ list.forEach(p=>{ let img=p.image||PH; g.innerHTML+=`<div class="card"><img src="${img}" onerror="this.src='${PH}'"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>`; });
+}
+function filterCat(c,b){
+ if(b){ document.querySelectorAll('.filters button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); }
+ render(c==='All'?PRODUCTS:PRODUCTS.filter(x=> (x.category||'').toLowerCase().includes(c.toLowerCase())));
+}
+function openMenu(){ document.getElementById('menuDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
+function openCart(){ document.getElementById('cartDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
+function closeAll(){ document.getElementById('menuDrawer').classList.remove('open'); document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('authModal').classList.remove('show'); document.getElementById('ordersModal').classList.remove('show'); document.getElementById('overlay').classList.remove('show'); }
+function openAuth(){ closeAll(); document.getElementById('authModal').classList.add('show'); document.getElementById('overlay').classList.add('show'); }
+function toggleAuth(){ authMode=authMode==='signup'?'login':'signup'; document.getElementById('authTitle').innerText=authMode==='signup'?'Create Account':'Welcome Back'; document.getElementById('a_name').style.display=authMode==='signup'?'block':'none'; document.getElementById('authSwitch').innerText=authMode==='signup'?'Have account? Login':'Need account? Create'; }
+function updateAll(){
+ let displayName=user? (user.name||user.email.split('@')[0]) : 'Guest — Login to shop';
+ document.getElementById('who').innerText=user?`Hi, ${displayName} 👋`:displayName;
+ document.getElementById('status').innerText=user?`${CART.reduce((s,c)=>s+c.qty,0)} items • Pay on delivery`:'Secure • Pay on delivery';
+ document.getElementById('avatar').innerText=user?displayName[0].toUpperCase():'S';
+ document.getElementById('menuName').innerText=displayName;
+ document.getElementById('menuEmail').innerText=user?user.email:'Not logged in';
+ document.getElementById('menuLogin').style.display=user?'none':'flex';
+ document.getElementById('menuLogout').style.display=user?'flex':'none';
+ document.getElementById('menuAdmin').style.display=(user&&user.role==='admin')?'flex':'none';
+ let qty=CART.reduce((s,c)=>s+c.qty,0);
+ document.getElementById('count').innerText=qty; document.getElementById('cartCount2').innerText=qty; document.getElementById('bottomCount').innerText=qty;
+ let list=document.getElementById('cartList'); list.innerHTML=''; let total=0;
+ CART.forEach((p,i)=>{ total+=p.price*p.qty; list.innerHTML+=`<div style="display:flex;gap:10px;background:#151515;border:1px solid #222;padding:10px;border-radius:14px;margin-bottom:8px"><img src="${p.image||PH}" style="width:56px;height:56px;border-radius:10px"><div style="flex:1"><div style="font-size:13px">${p.name}</div><div style="color:#888">$${p.price} x ${p.qty}</div><div style="display:flex;gap:6px;margin-top:6px"><button onclick="changeQty(${i},-1)" style="width:28px;height:28px;background:#222;color:#fff;border:none;border-radius:6px">-</button><span>${p.qty}</span><button onclick="changeQty(${i},1)" style="width:28px;height:28px;background:#222;color:#fff;border:none;border-radius:6px">+</button></div></div><button onclick="removeItem(${i})" style="background:#222;color:#fff;width:28px;height:28px;border:none;border-radius:8px">✕</button></div>`; });
+ document.getElementById('c_total').innerText='$'+total;
+ if(CART.length===0) list.innerHTML='<div style="text-align:center;color:#666;margin-top:40px">Cart empty</div>';
+ let fn=document.getElementById('c_fullname'); if(fn&&user&&!fn.value) fn.value=displayName;
+}
+async function doAuth(){
+ let name=document.getElementById('a_name').value.trim(); let email=document.getElementById('a_email').value.trim().toLowerCase(); let pass=document.getElementById('a_pass').value;
+ if(!email||!pass) return alert('Fill email & pass');
+ document.getElementById('authMsg').innerText='Checking...';
+ let url=authMode==='signup'?'/api/auth/signup':'/api/auth/login';
+ let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
+ let d=await r.json();
+ if(d.ok){
+  if(authMode==='signup'){ document.getElementById('authMsg').innerText='Created! Now login'; toggleAuth(); showToast('Now login'); }
+  else { user=d.user; localStorage.setItem('sf_user',JSON.stringify(user)); closeAll(); updateAll(); loadOrderCount(); showToast('Welcome'); }
+ } else { document.getElementById('authMsg').innerText=d.error||'Error'; }
+}
+function logout(){ localStorage.removeItem('sf_user'); user=null; CART=[]; updateAll(); closeAll(); }
+function saveCart(){ localStorage.setItem('sf_cart_'+(user?.email||'guest'),JSON.stringify(CART)); updateAll(); }
+function addToCart(id){ if(!user){ openAuth(); return showToast('Login first'); } let p=PRODUCTS.find(x=>x.id==id); if(!p) return; let e=CART.find(c=>c.id==id); if(e) e.qty++; else CART.push({...p,qty:1}); saveCart(); showToast('Added'); }
+function changeQty(i,d){ CART[i].qty=Math.max(1,CART[i].qty+d); saveCart(); }
+function removeItem(i){ CART.splice(i,1); saveCart(); }
+async function loadOrderCount(){ if(!user) return; try{ let r=await fetch('/api/orders?email='+encodeURIComponent(user.email)); let d=await r.json(); if(Array.isArray(d)) document.getElementById('menuOrderCount').innerText=d.length; }catch{} }
+async function viewOrders(){
+ if(!user) return openAuth(); closeAll();
+ document.getElementById('ordersModal').classList.add('show'); document.getElementById('overlay').classList.add('show');
+ let r=await fetch('/api/orders?email='+encodeURIComponent(user.email)); let orders=await r.json();
+ let list=document.getElementById('ordersList');
+ if(!Array.isArray(orders)||!orders.length){ list.innerHTML='<div style="color:#666;text-align:center">No orders yet</div>'; return; }
+ list.innerHTML=orders.map(o=>`<div class="orderCard"><b>#${o.id} • $${o.total}</b><div style="color:#888;font-size:12px">${o.address||''}<br>${o.state||''} ${o.lga||''} • ${o.delivery_date||''} ${o.delivery_time||''}<br>${o.phone||''}</div><div style="margin-top:8px"><button onclick="deleteOrder(${o.id})" style="background:#222;color:#f55;border:1px solid #333;padding:8px 12px;border-radius:10px">Delete</button></div></div>`).join('');
+}
+async function deleteOrder(id){ if(!confirm('Delete #'+id+'?')) return; let r=await fetch('/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); let d=await r.json(); if(d.ok){ showToast('Deleted'); viewOrders(); loadOrderCount(); } }
+async function doCheckout(){
+ if(!user) return openAuth();
+ let phone=document.getElementById('c_phone').value.trim(); let addr=document.getElementById('c_address').value.trim(); let state=document.getElementById('c_state').value; let lga=document.getElementById('c_lga').value; let date=document.getElementById('c_date').value; let time=document.getElementById('c_time').value;
+ if(!phone) return alert('Enter phone'); if(!state) return alert('Select state'); if(!lga) return alert('Select LGA'); if(!addr) return alert('Enter address'); if(!date) return alert('Select date');
+ if(CART.length===0) return alert('Cart empty');
+ let total=CART.reduce((s,c)=>s+c.price*c.qty,0); let items=JSON.stringify(CART.map(c=>c.name+' x'+c.qty).join(', ')); let fullAddr=addr+', '+lga+', '+state;
+ let r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items,total,address:fullAddr,phone,state,lga,delivery_date:date,delivery_time:time})});
+ let d=await r.json(); if(d.ok){ showToast('Order #'+d.order_id+' placed'); CART=[]; saveCart(); closeAll(); loadOrderCount(); } else alert(d.error||'Failed');
+}
+init();
