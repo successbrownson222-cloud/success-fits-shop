@@ -2,55 +2,45 @@
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Success Fits</title>
+<link rel="manifest" href="/manifest.json">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui}
-body{background:#070707;color:#fff;padding:0 14px 160px}
-input{background:#1e1e1e!important;border:1px solid #2a2a2a!important;color:#fff!important;padding:12px 14px!important;border-radius:12px!important;width:100%!important;margin-bottom:10px!important}
-.header{position:sticky;top:0;z-index:50;background:#070707;display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid #1a1a1a}
-.cartPro{position:relative;background:#111;border:1px solid #222;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.cartBadge{position:absolute;top:-7px;right:-7px;background:#ff2d55;color:#fff;font-size:11px;min-width:20px;height:20px;border-radius:20px;display:flex;align-items:center;justify-content:center}
-.avatar{width:44px;height:44px;background:#fff;color:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900}
-.topCard{background:#111;border:1px solid #222;padding:14px;border-radius:16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center}
-.filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0}
-.filters button{padding:9px 16px;border-radius:100px;border:1px solid #222;background:#111;color:#aaa;white-space:nowrap}
-.filters button.active{background:#fff;color:#000}
+body{background:#070707;color:#fff;padding:0 14px 170px}
+input,select{background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;padding:12px;border-radius:12px;width:100%;margin-bottom:10px}
+.header{position:sticky;top:0;z-index:50;background:#070707;display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid #1a1a1a}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-.card{background:#111;border:1px solid #1c1c1c;border-radius:20px;overflow:hidden;padding:8px}
-.card img{width:100%;height:130px;object-fit:cover;border-radius:14px;background:#0f0f0f}
-.card h3{font-size:13px;margin:8px 2px;height:32px;overflow:hidden}
-.card p{font-weight:900}
+.card{background:#111;border:1px solid #1c1c1c;border-radius:20px;padding:8px}
+.card img{width:100%;height:130px;object-fit:cover;border-radius:14px}
 .card button{width:100%;margin-top:8px;padding:11px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:800}
 #menuDrawer{position:fixed;top:0;left:-100%;width:82%;max-width:320px;height:100%;background:#0f0f0f;z-index:120;padding:24px;transition:.35s}
 #menuDrawer.open{left:0}
-.menuItem{padding:14px 0;border-bottom:1px solid #1a1a1a;display:flex;justify-content:space-between;color:#ccc}
 #cartDrawer{position:fixed;top:0;right:-100%;width:92%;max-width:400px;height:100%;background:#0f0f0f;padding:20px;transition:.4s;z-index:110;overflow-y:auto;display:flex;flex-direction:column}
 #cartDrawer.open{right:0}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;z-index:100}
 .overlay.show{display:block}
-#authModal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:200}
-#authModal.show{display:flex}
+#authModal,#ordersModal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;z-index:130;padding:20px;overflow:auto}
+#authModal.show,#ordersModal.show{display:flex;align-items:center;justify-content:center}
 .authBox{background:#111;border:1px solid #222;width:92%;max-width:360px;padding:22px;border-radius:24px}
-#ordersModal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;z-index:130;padding:20px;overflow:auto}
-#ordersModal.show{display:block}
 .orderCard{background:#151515;border:1px solid #222;border-radius:16px;padding:14px;margin-bottom:10px}
 footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:30px -14px 0}
 .bottomNav{position:fixed;bottom:0;left:0;right:0;background:#0f0f0f;border-top:1px solid #222;display:flex;justify-content:space-around;padding:10px 0 14px;z-index:80}
-.bottomNav button{background:none;border:none;color:#666;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px}
-.bottomNav button.active{color:#fff}
+.bottomNav button{background:none;border:none;color:#666;font-size:11px;display:flex;flex-direction:column;align-items:center}
 #toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:9999}
+.filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0}
+.filters button{padding:9px 16px;border-radius:100px;border:1px solid #222;background:#111;color:#aaa;white-space:nowrap}
+.filters button.active{background:#fff;color:#000}
 </style></head><body>
 <div id="toast"></div><div id="overlay" class="overlay" onclick="closeAll()"></div>
 <div id="menuDrawer">
 <div style="display:flex;justify-content:space-between;margin-bottom:20px"><b>MENU</b><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div>
 <div style="background:#111;border:1px solid #222;padding:14px;border-radius:14px;margin-bottom:16px"><div id="menuName">Guest</div><div id="menuEmail" style="color:#888;font-size:12px">Not logged in</div></div>
-<div class="menuItem" onclick="filterCat('All');closeAll()">All <span>›</span></div>
-<div class="menuItem" onclick="filterCat('Shoes');closeAll()">Shoes <span>›</span></div>
-<div class="menuItem" onclick="filterCat('Clothes');closeAll()">Clothes <span>›</span></div>
-<div class="menuItem" onclick="filterCat('Jewelry');closeAll()">Jewelry <span>›</span></div>
-<div class="menuItem" onclick="viewOrders();closeAll()">My Orders <span id="menuOrderCount">0</span></div>
-<div class="menuItem" id="menuAdmin" style="display:none" onclick="location.href='/admin'">Admin Dashboard <span>›</span></div>
-<div class="menuItem" id="menuLogin" onclick="openAuth();closeAll()">Login / Create Account <span>›</span></div>
-<div class="menuItem" id="menuLogout" style="display:none;color:#ff2d55" onclick="logout();closeAll()">Logout <span>›</span></div>
+<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('All');closeAll()">All</div>
+<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Shoes');closeAll()">Shoes</div>
+<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Clothes');closeAll()">Clothes</div>
+<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="viewOrders();closeAll()">My Orders <span id="menuOrderCount">0</span></div>
+<div id="menuAdmin" style="display:none;padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="location.href='/admin'">Admin Dashboard</div>
+<div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="openAuth();closeAll()">Login / Create Account</div>
+<div id="menuLogout" style="display:none;padding:14px 0;color:#ff2d55" onclick="logout();closeAll()">Logout</div>
 </div>
 <div id="cartDrawer">
 <h2 style="display:flex;justify-content:space-between">Cart <span id="cartCount2" style="background:#ff2d55;padding:2px 10px;border-radius:20px;font-size:14px">0</span> <span onclick="closeAll()">✕</span></h2>
@@ -58,108 +48,20 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 <div style="background:#151515;padding:14px;border-radius:16px;margin-top:12px;border:1px solid #222">
 <input id="c_fullname" placeholder="Full Name">
 <input id="c_phone" placeholder="Phone / WhatsApp">
-<input id="c_address" placeholder="Delivery Address">
-<div style="display:flex;gap:8px"><input id="c_date" type="date" style="flex:1"><select id="c_time" style="flex:1;padding:12px;background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;border-radius:12px;margin-bottom:10px"><option value="">Time</option><option>Morning (9am-12pm)</option><option>Afternoon (12pm-4pm)</option><option>Evening (4pm-8pm)</option></select></div>
+<select id="c_state" onchange="loadLGAs()"><option value="">Select State</option></select>
+<select id="c_lga"><option value="">Select LGA</option></select>
+<input id="c_address" placeholder="Street Address">
+<div style="display:flex;gap:8px"><input id="c_date" type="date" style="flex:1"><select id="c_time" style="flex:1"><option>Morning (9am-12pm)</option><option>Afternoon (12pm-4pm)</option><option>Evening (4pm-8pm)</option></select></div>
 <div style="display:flex;justify-content:space-between;font-weight:900;margin:12px 0"><span>Total</span><span id="c_total">$0</span></div>
 <button onclick="doCheckout()" style="width:100%;padding:15px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:900">Place Order</button>
 </div></div>
-<div id="ordersModal"><div style="max-width:500px;margin:auto"><div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>My Orders</h2><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div><div id="ordersList"></div></div></div>
-<div id="authModal" onclick="if(event.target==this)closeAll()"><div class="authBox"><h2 id="authTitle">Create Account</h2><input id="a_name" placeholder="Full Name"><input id="a_email" placeholder="Email"><input id="a_pass" type="password" placeholder="Password"><button style="width:100%;padding:14px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:800;margin-top:6px" onclick="doAuth()">Continue</button><p style="text-align:center;margin-top:12px;font-size:13px"><span onclick="toggleAuth()" id="authSwitch" style="color:#ff2d55">Have account? Login</span> • <span onclick="closeAll()" style="color:#888">Close</span></p><div id="authMsg" style="font-size:12px;margin-top:10px"></div></div></div>
-<div class="header"><div style="display:flex;gap:10px;align-items:center"><div onclick="openMenu()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px">☰</div><div style="font-weight:900">SUCCESS FITS.</div></div><div style="display:flex;gap:10px"><div class="cartPro" onclick="openCart()">🛒<div class="cartBadge" id="count">0</div></div><div class="avatar" id="avatar" onclick="openMenu()">S</div></div></div>
-<div class="topCard"><div><div style="font-size:11px;color:#888">WELCOME</div><div style="font-weight:900" id="who">Guest — Login to shop</div><div style="font-size:11px;color:#0f0" id="status">Secure • Pay on delivery</div></div><div id="topAction"></div></div>
+<div id="ordersModal"><div style="max-width:500px;margin:auto;background:#0f0f0f;padding:20px;border-radius:20px;width:100%"><div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>My Orders</h2><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div><div id="ordersList"></div></div></div>
+<div id="authModal"><div class="authBox"><h2 id="authTitle">Create Account</h2><input id="a_name" placeholder="Full Name"><input id="a_email" placeholder="Email"><input id="a_pass" type="password" placeholder="Password"><button style="width:100%;padding:14px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:800;margin-top:6px" onclick="doAuth()">Continue</button><p style="text-align:center;margin-top:12px;font-size:13px"><span onclick="toggleAuth()" id="authSwitch" style="color:#ff2d55">Have account? Login</span> • <span onclick="closeAll()" style="color:#888">Close</span></p><div id="authMsg" style="font-size:12px;margin-top:10px"></div></div></div>
+<div class="header"><div style="display:flex;gap:10px;align-items:center"><div onclick="openMenu()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px">☰</div><div style="font-weight:900">SUCCESS FITS.</div></div><div style="display:flex;gap:10px;align-items:center"><div onclick="openCart()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px;position:relative">🛒<span id="count" style="position:absolute;top:-6px;right:-6px;background:#ff2d55;color:#fff;font-size:10px;min-width:18px;height:18px;border-radius:20px;display:flex;align-items:center;justify-content:center">0</span></div><div id="avatar" onclick="openMenu()" style="width:40px;height:40px;background:#fff;color:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900">S</div></div></div>
+<div style="background:#111;border:1px solid #222;padding:14px;border-radius:16px;margin:14px 0"><div style="font-size:11px;color:#888">WELCOME</div><div style="font-weight:900" id="who">Guest — Login to shop</div><div style="font-size:11px;color:#0f0" id="status">Secure • Pay on delivery</div></div>
 <div class="filters"><button class="active" onclick="filterCat('All',this)">All</button><button onclick="filterCat('Shoes',this)">Shoes</button><button onclick="filterCat('Clothes',this)">Clothes</button><button onclick="filterCat('Jewelry',this)">Jewelry</button></div>
 <div id="grid" class="grid"></div>
-<footer><h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos.</p><div style="color:#333;font-size:11px">© 2026 SUCCESS FITS</div></footer>
-<div class="bottomNav"><button class="active" onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button><button onclick="filterCat('Shoes')">👟 Shoes</button><button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button><button onclick="viewOrders()">📦 Orders</button></div>
-<script>
-let PRODUCTS=[],CART=[],user=null,authMode='signup';
-const PH='https://via.placeholder.com/400x400.png?text=SUCCESS';
-function init(){
- let su=localStorage.getItem('sf_user'); if(su){ try{ user=JSON.parse(su);}catch{}}
- let sc=localStorage.getItem('sf_cart_'+(user?.email||'guest')); if(sc){ try{ CART=JSON.parse(sc);}catch{}}
- fetch('/api/products').then(r=>r.json()).then(d=>{ let a=Array.isArray(d)?d:(d.products||[]); PRODUCTS=a; render(a); });
- updateAll(); loadOrderCount();
- let d=document.getElementById('c_date'); if(d){ d.min=new Date().toISOString().split('T')[0]; }
-}
-function showToast(m){ let t=document.getElementById('toast'); t.innerText=m; t.style.display='block'; setTimeout(()=>t.style.display='none',2500); }
-function render(list){
- let g=document.getElementById('grid'); g.innerHTML='';
- if(!list.length){ g.innerHTML='<div style="color:#666;grid-column:1/3;text-align:center;padding:30px">No products yet. Add from Admin</div>'; return; }
- list.forEach(p=>{ let img=p.image||PH; g.innerHTML+=`<div class="card"><img src="${img}" onerror="this.src='${PH}'"><h3>${p.name}</h3><p>$${p.price}</p><button onclick="addToCart(${p.id})">Add to Cart</button></div>`; });
-}
-function filterCat(c,b){
- if(b){ document.querySelectorAll('.filters button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); }
- render(c==='All'?PRODUCTS:PRODUCTS.filter(x=> (x.category||'').toLowerCase().includes(c.toLowerCase())));
-}
-function openMenu(){ document.getElementById('menuDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
-function openCart(){ document.getElementById('cartDrawer').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
-function closeAll(){ document.getElementById('menuDrawer').classList.remove('open'); document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('authModal').classList.remove('show'); document.getElementById('ordersModal').classList.remove('show'); document.getElementById('overlay').classList.remove('show'); }
-function openAuth(){ closeAll(); document.getElementById('authModal').classList.add('show'); document.getElementById('overlay').classList.add('show'); }
-function toggleAuth(){ authMode=authMode==='signup'?'login':'signup'; document.getElementById('authTitle').innerText=authMode==='signup'?'Create Account':'Welcome Back'; document.getElementById('a_name').style.display=authMode==='signup'?'block':'none'; document.getElementById('authSwitch').innerText=authMode==='signup'?'Have account? Login':'Need account? Create'; }
-function updateAll(){
- let name=user? (user.name||user.email.split('@')[0]) : 'Guest — Login to shop';
- document.getElementById('who').innerText=user?`Hi, ${name} 👋`:name;
- document.getElementById('avatar').innerText=user?name[0].toUpperCase():'S';
- document.getElementById('menuName').innerText=name;
- document.getElementById('menuEmail').innerText=user?user.email:'Not logged in';
- document.getElementById('menuLogin').style.display=user?'none':'flex';
- document.getElementById('menuLogout').style.display=user?'flex':'none';
- document.getElementById('menuAdmin').style.display=(user&&user.role==='admin')?'flex':'none';
- let qty=CART.reduce((s,c)=>s+c.qty,0);
- document.getElementById('count').innerText=qty;
- document.getElementById('cartCount2').innerText=qty;
- document.getElementById('bottomCount').innerText=qty;
- let list=document.getElementById('cartList'); list.innerHTML=''; let total=0;
- CART.forEach((p,i)=>{ total+=p.price*p.qty; list.innerHTML+=`<div style="display:flex;gap:10px;background:#151515;border:1px solid #222;padding:10px;border-radius:14px;margin-bottom:8px"><img src="${p.image||PH}" style="width:56px;height:56px;border-radius:10px"><div style="flex:1"><div style="font-size:13px">${p.name}</div><div style="color:#888">$${p.price} x ${p.qty}</div><div style="display:flex;gap:6px;margin-top:6px"><button onclick="changeQty(${i},-1)" style="width:28px;height:28px;background:#222;color:#fff;border:none;border-radius:6px">-</button><span>${p.qty}</span><button onclick="changeQty(${i},1)" style="width:28px;height:28px;background:#222;color:#fff;border:none;border-radius:6px">+</button></div></div><button onclick="removeItem(${i})" style="background:#222;color:#fff;width:28px;height:28px;border:none;border-radius:8px">✕</button></div>`; });
- document.getElementById('c_total').innerText='$'+total;
- if(CART.length===0) list.innerHTML='<div style="text-align:center;color:#666;margin-top:40px">Cart empty</div>';
- let fn=document.getElementById('c_fullname'); if(fn&&user&&!fn.value) fn.value=name;
-}
-async function doAuth(){
- let name=document.getElementById('a_name').value.trim();
- let email=document.getElementById('a_email').value.trim().toLowerCase();
- let pass=document.getElementById('a_pass').value;
- if(!email||!pass) return alert('Fill email & pass');
- document.getElementById('authMsg').innerText='Checking...';
- let url=authMode==='signup'?'/api/auth/signup':'/api/auth/login';
- let r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
- let d=await r.json();
- if(d.ok){
-  if(authMode==='signup'){ document.getElementById('authMsg').innerText='Created! Now login'; toggleAuth(); showToast('Now login'); }
-  else { user=d.user; localStorage.setItem('sf_user',JSON.stringify(user)); closeAll(); updateAll(); loadOrderCount(); showToast('Welcome '+user.email); }
- } else { document.getElementById('authMsg').innerText=d.error||'Error'; }
-}
-function logout(){ localStorage.removeItem('sf_user'); user=null; CART=[]; updateAll(); closeAll(); }
-function saveCart(){ localStorage.setItem('sf_cart_'+(user?.email||'guest'),JSON.stringify(CART)); updateAll(); }
-function addToCart(id){ if(!user){ openAuth(); return showToast('Login first'); } let p=PRODUCTS.find(x=>x.id==id); if(!p) return; let e=CART.find(c=>c.id==id); if(e) e.qty++; else CART.push({...p,qty:1}); saveCart(); showToast('Added'); }
-function changeQty(i,d){ CART[i].qty=Math.max(1,CART[i].qty+d); saveCart(); }
-function removeItem(i){ CART.splice(i,1); saveCart(); }
-async function loadOrderCount(){ if(!user) return; try{ let r=await fetch('/api/orders?email='+encodeURIComponent(user.email)); let d=await r.json(); if(Array.isArray(d)) document.getElementById('menuOrderCount').innerText=d.length; }catch{} }
-async function viewOrders(){
- if(!user) return openAuth();
- closeAll();
- document.getElementById('ordersModal').classList.add('show');
- document.getElementById('overlay').classList.add('show');
- let r=await fetch('/api/orders?email='+encodeURIComponent(user.email));
- let orders=await r.json();
- let list=document.getElementById('ordersList');
- if(!Array.isArray(orders)||!orders.length){ list.innerHTML='<div style="color:#666;text-align:center">No orders yet</div>'; return; }
- list.innerHTML=orders.map(o=>`<div class="orderCard"><b>#${o.id} • $${o.total}</b><div style="color:#888;font-size:12px">${o.address||''} ${o.delivery_date||''} ${o.delivery_time||''}</div><div style="margin-top:8px"><button onclick="deleteOrder(${o.id})" style="background:#222;color:#f55;border:1px solid #333;padding:8px 12px;border-radius:10px">Delete #${o.id}</button></div></div>`).join('');
-}
-async function deleteOrder(id){ if(!confirm('Delete #'+id+'?')) return; let r=await fetch('/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); let d=await r.json(); if(d.ok){ showToast('Deleted'); viewOrders(); loadOrderCount(); } }
-async function doCheckout(){
- if(!user) return openAuth();
- let phone=document.getElementById('c_phone').value.trim();
- let addr=document.getElementById('c_address').value.trim();
- let date=document.getElementById('c_date').value;
- let time=document.getElementById('c_time').value;
- if(!phone||!addr) return alert('Enter phone & address');
- if(!date) return alert('Select delivery date');
- if(CART.length===0) return alert('Cart empty');
- let total=CART.reduce((s,c)=>s+c.price*c.qty,0);
- let items=JSON.stringify(CART.map(c=>c.name+' x'+c.qty).join(', '));
- let r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items,total,address:addr,phone,delivery_date:date,delivery_time:time})});
- let d=await r.json(); if(d.ok){ showToast('Order #'+d.order_id+' placed'); CART=[]; saveCart(); closeAll(); loadOrderCount(); } else alert(d.error||'Failed');
-}
-init();
-</script></body></html>
+<footer><h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos.</p><div style="color:#333;font-size:11px">© 2026 SUCCESS FITS — Lagos NG</div></footer>
+<div class="bottomNav"><button onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button><button onclick="filterCat('Shoes')">👟 Shoes</button><button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button><button onclick="viewOrders()">📦 Orders</button></div>
+<script src="/script.js"></script>
+</body></html>
