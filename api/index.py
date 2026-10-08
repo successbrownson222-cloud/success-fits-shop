@@ -57,6 +57,7 @@ class ProductReq(BaseModel):
 
 class OrderReq(BaseModel):
     email: str; items: str = ""; total: int = 0; address: str = ""; phone: str = ""
+    state: str = ""; lga: str = ""; delivery_date: str = ""; delivery_time: str = ""
 
 def find_frontend_file(name: str):
     roots = [pathlib.Path(__file__).parent.parent / "frontend", pathlib.Path.cwd() / "frontend", pathlib.Path("/vercel/path0/frontend"), pathlib.Path("frontend")]
@@ -71,7 +72,6 @@ INDEX_HTML = find_frontend_file("index.html")
 @app.get("/api/health")
 def health(): return {"ok": True, "bcrypt": HAS_BCRYPT}
 
-# --- AUTH ---
 @app.post("/api/auth/signup")
 def signup(data: AuthReq):
     email = clean_email(data.email)
@@ -81,9 +81,6 @@ def signup(data: AuthReq):
     try:
         cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
-        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
-        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
-        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
         role = "admin" if email == ADMIN_EMAIL else "user"
         cur.execute("INSERT INTO users (email,password,name,role) VALUES (%s,%s,%s,%s)", (email, hash_pw(data.password), data.name, role))
         conn.commit(); cur.close(); conn.close()
@@ -110,7 +107,6 @@ def auth_login(data: AuthReq):
         return {"ok": True, "user": {"email": email, "name": row.get('name'), "role": row.get('role')}}
     except Exception as e: return {"error": f"Server error: {e}"}
 
-# --- PRODUCTS ---
 @app.get("/api/products")
 def get_products():
     try:
@@ -150,13 +146,18 @@ def del_product(request: Request):
         return {"success": True}
     except Exception as e: return {"error": str(e)}
 
-# --- ORDERS ---
+# --- ORDERS PRO ---
 @app.post("/api/orders")
 def create_order(req: OrderReq):
     try:
         conn = get_conn(); cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-        cur.execute("INSERT INTO orders (email,items,total,address,phone) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone))
+        cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS state TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS lga TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_date TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone TEXT")
+        cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
         nid = cur.fetchone()['id']; conn.commit(); cur.close(); conn.close()
         return {"ok": True, "order_id": nid}
     except Exception as e: return {"error": str(e)}
@@ -167,7 +168,11 @@ def get_orders(email: str = "", all: str = ""):
         conn = get_conn()
         if not conn: return []
         cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
+        cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS state TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS lga TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_date TEXT")
+        cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time TEXT")
         clean = clean_email(email)
         if all == "true" and is_admin(email):
             cur.execute("SELECT * FROM orders ORDER BY id DESC")
