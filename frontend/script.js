@@ -8,7 +8,6 @@ const STATES={
   "Others":["Other"]
 };
 
-// === INIT ===
 function init(){
   const su=localStorage.getItem('sf_user');
   if(su){try{user=JSON.parse(su);}catch{}}
@@ -18,25 +17,16 @@ function init(){
   fetch('/api/products').then(r=>r.json()).then(d=>{
     PRODUCTS=Array.isArray(d)?d:(d.products||[]);
     renderProducts(PRODUCTS);
-    if(user) loadCartFromBackend();
+    if(user) {
+      loadCartFromBackend();
+      // auto-sync website -> DB every 5 sec
+      setInterval(()=>{ if(user) loadCartFromBackend(); }, 5000);
+    }
   });
 
   updateAll(); loadOrderCount(); initStates();
   const dt=document.getElementById('c_date');
   if(dt) dt.min=new Date().toISOString().split('T')[0];
-
-  window.addEventListener('beforeinstallprompt',e=>{
-    e.preventDefault(); deferredPrompt=e;
-    const b=document.getElementById('installBtn');
-    if(b) b.style.display='block';
-  });
-  const ib=document.getElementById('installBtn');
-  if(ib) ib.addEventListener('click',async()=>{
-    if(!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt=null; ib.style.display='none';
-  });
 }
 
 function initStates(){
@@ -59,13 +49,14 @@ function loadLGAs(){
 }
 function showToast(m){
   const t=document.getElementById('toast');
+  if(!t) return console.log(m);
   t.innerText=m; t.style.display='block';
   setTimeout(()=>t.style.display='none',2500);
 }
 
-// === CLEAN RENDER - NO HTML STRING ===
 function renderProducts(list){
   const g=document.getElementById('grid');
+  if(!g) return;
   g.innerHTML='';
   if(!list.length){
     const empty=document.createElement('div');
@@ -100,7 +91,6 @@ function filterCat(c,b){
   }
   renderProducts(c==='All'?PRODUCTS:PRODUCTS.filter(x=>(x.category||'').toLowerCase().includes(c.toLowerCase())));
 }
-
 function openMenu(){document.getElementById('menuDrawer').classList.add('open');document.getElementById('overlay').classList.add('show');}
 function openCart(){document.getElementById('cartDrawer').classList.add('open');document.getElementById('overlay').classList.add('show');}
 function closeAll(){
@@ -108,7 +98,8 @@ function closeAll(){
     const el=document.getElementById(id);
     if(el) el.classList.remove('open','show');
   });
-  document.getElementById('overlay').classList.remove('show');
+  const ov=document.getElementById('overlay');
+  if(ov) ov.classList.remove('show');
 }
 function openAuth(){closeAll();document.getElementById('authModal').classList.add('show');document.getElementById('overlay').classList.add('show');}
 function toggleAuth(){
@@ -117,8 +108,6 @@ function toggleAuth(){
   document.getElementById('a_name').style.display=authMode==='signup'?'block':'none';
   document.getElementById('authSwitch').innerText=authMode==='signup'?'Have account? Login':'Need account? Create';
 }
-
-// === CLEAN CART RENDER ===
 function createCartRow(p,i){
   const row=document.createElement('div');
   row.style.cssText='display:flex;gap:10px;background:#151515;border:1px solid #222;padding:10px;border-radius:14px;margin-bottom:8px';
@@ -137,28 +126,30 @@ function createCartRow(p,i){
   row.append(img,info,del);
   return row;
 }
-
 function updateAll(){
+  const who=document.getElementById('who');
+  const status=document.getElementById('status');
+  const avatar=document.getElementById('avatar');
+  if(!who) return;
   const emailName=user?user.email.split('@')[0]:'Guest';
   const displayName=user?(user.name && user.name.toLowerCase()!=='admin'?user.name:emailName):'Guest';
-  document.getElementById('who').innerText=user?`Hi, ${displayName} 👋`:'Guest — Login to shop';
-  document.getElementById('status').innerText=user? (user.role==='admin'?'Admin • Manage store':`${CART.reduce((s,c)=>s+c.qty,0)} items • Pay on delivery`):'Secure • Pay on delivery';
-  document.getElementById('avatar').innerText=user?displayName[0].toUpperCase():'S';
-  document.getElementById('menuName').innerText=user?(displayName+(user.role==='admin'?' (admin)':'')):'Guest';
-  document.getElementById('menuEmail').innerText=user?user.email:'Not logged in';
-  document.getElementById('menuLogin').style.display=user?'none':'block';
-  document.getElementById('menuLogout').style.display=user?'block':'none';
-  document.getElementById('menuAdmin').style.display=(user&&user.role==='admin')?'block':'none';
-
+  who.innerText=user?`Hi, ${displayName} 👋`:'Guest — Login to shop';
+  if(status) status.innerText=user? (user.role==='admin'?'Admin • Manage store':`${CART.reduce((s,c)=>s+c.qty,0)} items • Pay on delivery`):'Secure • Pay on delivery';
+  if(avatar) avatar.innerText=user?displayName[0].toUpperCase():'S';
+  const mn=document.getElementById('menuName'); if(mn) mn.innerText=user?(displayName+(user.role==='admin'?' (admin)':'')):'Guest';
+  const me=document.getElementById('menuEmail'); if(me) me.innerText=user?user.email:'Not logged in';
+  const ml=document.getElementById('menuLogin'); if(ml) ml.style.display=user?'none':'block';
+  const mlo=document.getElementById('menuLogout'); if(mlo) mlo.style.display=user?'block':'none';
+  const ma=document.getElementById('menuAdmin'); if(ma) ma.style.display=(user&&user.role==='admin')?'block':'none';
   const qty=CART.reduce((s,c)=>s+c.qty,0);
-  document.getElementById('count').innerText=qty;
-  document.getElementById('cartCount2').innerText=qty;
-  document.getElementById('bottomCount').innerText=qty;
-
+  const c1=document.getElementById('count'); if(c1) c1.innerText=qty;
+  const c2=document.getElementById('cartCount2'); if(c2) c2.innerText=qty;
+  const bc=document.getElementById('bottomCount'); if(bc) bc.innerText=qty;
   const list=document.getElementById('cartList');
+  if(!list) return;
   list.innerHTML=''; let total=0;
   CART.forEach((p,i)=>{ total+=p.price*p.qty; list.appendChild(createCartRow(p,i)); });
-  document.getElementById('c_total').innerText='$'+total;
+  const ct=document.getElementById('c_total'); if(ct) ct.innerText='$'+total;
   if(CART.length===0){
     const empty=document.createElement('div');
     empty.style.cssText='text-align:center;color:#666;margin-top:40px';
@@ -169,16 +160,21 @@ function updateAll(){
   if(fn&&user&&!fn.value) fn.value=user.name||'';
 }
 
-// === SYNC FOR MOBILE APP (Website -> Snack) ===
+// === SYNC FIXED FOR MOBILE APP ===
 async function loadCartFromBackend(){
   if(!user?.email) return;
   try{
     const r=await fetch('/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
     const d=await r.json();
     if(d.items && d.items.length){
-      CART=d.items.map(it=>{
-        const prod=PRODUCTS.find(p=>p.id==it.id)||it;
-        return {...prod, qty:1, id:it.id, name:it.name||prod.name, price:it.price||prod.price, image:it.image||prod.image};
+      // Backend -> Website (if backend has more items)
+      const backendIds = new Set(d.items.map(it=>it.id));
+      // Merge: keep website cart but add backend items not in website
+      d.items.forEach(it=>{
+        if(!CART.find(c=>c.id==it.id)){
+          const prod=PRODUCTS.find(p=>p.id==it.id)||it;
+          CART.push({...prod, qty: it.qty || 1, id:it.id});
+        }
       });
       localStorage.setItem('sf_cart_'+user.email, JSON.stringify(CART));
       updateAll();
@@ -193,6 +189,7 @@ async function syncAddToBackend(product_id){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email:user.email.toLowerCase(), product_id})
     });
+    console.log('Synced to app DB');
   }catch{}
 }
 async function syncFullCartToBackend(){
@@ -207,20 +204,39 @@ async function syncFullCartToBackend(){
   }catch{}
 }
 
-// === AUTH & CART ===
 async function doAuth(){
-  const name=document.getElementById('a_name').value.trim();
-  const email=document.getElementById('a_email').value.trim().toLowerCase();
-  const pass=document.getElementById('a_pass').value;
+  const nameEl=document.getElementById('a_name');
+  const emailEl=document.getElementById('a_email');
+  const passEl=document.getElementById('a_pass');
+  const msgEl=document.getElementById('authMsg');
+  const name=nameEl? nameEl.value.trim() : "";
+  const email=emailEl? emailEl.value.trim().toLowerCase() : "";
+  const pass=passEl? passEl.value : "";
   if(!email||!pass) return alert('Fill email & pass');
-  document.getElementById('authMsg').innerText='Checking...';
+  if(msgEl) msgEl.innerText='Checking...';
   const url=authMode==='signup'?'/api/auth/signup':'/api/auth/login';
   const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
   const d=await r.json();
   if(d.ok){
-    if(authMode==='signup'){document.getElementById('authMsg').innerText='Created! Now login';toggleAuth();showToast('Now login');}
-    else{user=d.user;localStorage.setItem('sf_user',JSON.stringify(user));closeAll();updateAll();loadOrderCount();await loadCartFromBackend();showToast('Welcome');}
-  }else{document.getElementById('authMsg').innerText=d.error||'Error';}
+    if(authMode==='signup'){if(msgEl) msgEl.innerText='Created! Now login';toggleAuth();showToast('Now login');}
+    else{
+      user=d.user;
+      localStorage.setItem('sf_user',JSON.stringify(user));
+      closeAll();updateAll();loadOrderCount();
+      // FIXED: First push local guest cart to backend, then load backend
+      const guestCart=localStorage.getItem('sf_cart_guest');
+      if(guestCart){
+        try{
+          const gc=JSON.parse(guestCart);
+          for(const it of gc){
+            for(let i=0;i<it.qty;i++) await syncAddToBackend(it.id);
+          }
+        }catch{}
+      }
+      await loadCartFromBackend();
+      showToast('Welcome '+user.email);
+    }
+  }else{if(msgEl) msgEl.innerText=d.error||'Error';}
 }
 function logout(){localStorage.removeItem('sf_user');user=null;CART=[];updateAll();closeAll();showToast('Logged out');setTimeout(()=>openAuth(),500);}
 function saveCart(){localStorage.setItem('sf_cart_'+(user?.email||'guest'),JSON.stringify(CART));updateAll();}
@@ -233,7 +249,6 @@ function addToCart(id){
 function changeQty(i,d){CART[i].qty=Math.max(1,CART[i].qty+d);saveCart();syncFullCartToBackend();}
 function removeItem(i){CART.splice(i,1);saveCart();syncFullCartToBackend();}
 
-// === ORDERS - CLEAN ===
 function createOrderCard(o){
   const card=document.createElement('div'); card.className='orderCard';
   const title=document.createElement('b'); title.textContent=`#${o.id} • $${o.total}`;
@@ -246,7 +261,7 @@ function createOrderCard(o){
   card.append(title,details,btnWrap);
   return card;
 }
-async function loadOrderCount(){if(!user)return;try{const r=await fetch('/api/orders?email='+encodeURIComponent(user.email));const d=await r.json();if(Array.isArray(d))document.getElementById('menuOrderCount').innerText=d.length;}catch{}}
+async function loadOrderCount(){if(!user)return;try{const r=await fetch('/api/orders?email='+encodeURIComponent(user.email));const d=await r.json();if(Array.isArray(d)) document.getElementById('menuOrderCount').innerText=d.length;}catch{}}
 async function viewOrders(){
   if(!user) return openAuth();
   closeAll();
