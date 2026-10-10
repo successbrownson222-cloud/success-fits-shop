@@ -61,9 +61,17 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 <div id="grid" class="grid"></div>
 <footer>
 <h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos. Pay on delivery.</p>
-<button id="installBtn" style="display:none;width:100%;padding:14px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:900;margin:12px 0">📲 Install Mobile App</button>
+<button id="installBtn" style="width:100%;padding:14px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:900;margin:12px 0">📲 Install Mobile App</button>
 <p style="color:#333;font-size:11px;margin-top:10px">© 2026 SUCCESS FITS — Lagos NG • <span style="color:#888" onclick="location.href='/admin'">Admin</span></p>
 </footer>
 <div class="bottomNav"><button onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button><button onclick="filterCat('Shoes')">👟 Shoes</button><button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button><button onclick="viewOrders()">📦 Orders</button></div>
 <script src="/script.js"></script>
+<script>
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;});
+document.getElementById('installBtn').addEventListener('click',async()=>{
+ if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;}
+ else{alert('To install: Chrome menu ⋮ → Add to Home screen / Install app');}
+});
+</script>
 </body></html>
