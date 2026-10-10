@@ -1,5 +1,6 @@
 let PRODUCTS=[],CART=[],user=null,authMode='signup',deferredPrompt=null;
 const PH='https://via.placeholder.com/400x400.png?text=SUCCESS';
+const API_BASE = 'https://success-fits-shop.vercel.app';
 const STATES={
   "Lagos":["Ikeja","Lekki","Yaba","Surulere","Ikorodu","Ajah","Badagry","Alimosho","Oshodi"],
   "Abuja FCT":["AMAC","Gwagwalada","Kuje","Bwari","Kwali"],
@@ -17,10 +18,10 @@ function init(){
   fetch('/api/products').then(r=>r.json()).then(d=>{
     PRODUCTS=Array.isArray(d)?d:(d.products||[]);
     renderProducts(PRODUCTS);
-    if(user) {
-      loadCartFromBackend();
-      // auto-sync website -> DB every 5 sec
-      setInterval(()=>{ if(user) loadCartFromBackend(); }, 5000);
+    // Website is source - DO NOT auto-pull from app
+    // Only if website cart is empty on login, restore from backend once
+    if(user && CART.length===0){
+      loadCartFromBackendOnce();
     }
   });
 
@@ -160,16 +161,13 @@ function updateAll(){
   if(fn&&user&&!fn.value) fn.value=user.name||'';
 }
 
-// === SYNC FIXED FOR MOBILE APP ===
-async function loadCartFromBackend(){
+// === ONE WAY SYNC: WEBSITE -> MOBILE APP ONLY ===
+async function loadCartFromBackendOnce(){
   if(!user?.email) return;
   try{
-    const r=await fetch('/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
+    const r=await fetch(API_BASE+'/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
     const d=await r.json();
-    if(d.items && d.items.length){
-      // Backend -> Website (if backend has more items)
-      const backendIds = new Set(d.items.map(it=>it.id));
-      // Merge: keep website cart but add backend items not in website
+    if(d.items && d.items.length>0){
       d.items.forEach(it=>{
         if(!CART.find(c=>c.id==it.id)){
           const prod=PRODUCTS.find(p=>p.id==it.id)||it;
@@ -179,29 +177,38 @@ async function loadCartFromBackend(){
       localStorage.setItem('sf_cart_'+user.email, JSON.stringify(CART));
       updateAll();
     }
-  }catch(e){ console.log('load backend error',e) }
+  }catch(e){ console.log('restore error',e) }
 }
+
 async function syncAddToBackend(product_id){
   if(!user?.email) return;
   try{
-    await fetch('/api/cart/add',{
+    const r=await fetch(API_BASE+'/api/cart/add',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:user.email.toLowerCase(), product_id})
+      body:JSON.stringify({email:user.email.toLowerCase(), product_id: Number(product_id)})
     });
-    console.log('Synced to app DB');
-  }catch{}
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'add failed');
+    console.log('Pushed to app DB', d);
+    return true;
+  }catch(e){
+    console.log('Sync failed', e);
+    showToast('Added locally, sync retrying...');
+    return false;
+  }
 }
+
 async function syncFullCartToBackend(){
   if(!user?.email) return;
   try{
-    await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})});
+    await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})});
     for(const c of CART){
       for(let q=0;q<c.qty;q++){
-        await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:c.id})});
+        await fetch(API_BASE+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id: Number(c.id)})});
       }
     }
-  }catch{}
+  }catch(e){ console.log('full sync error', e) }
 }
 
 async function doAuth(){
@@ -214,7 +221,7 @@ async function doAuth(){
   const pass=passEl? passEl.value : "";
   if(!email||!pass) return alert('Fill email & pass');
   if(msgEl) msgEl.innerText='Checking...';
-  const url=authMode==='signup'?'/api/auth/signup':'/api/auth/login';
+  const url='/api/auth/'+(authMode==='signup'?'signup':'login');
   const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
   const d=await r.json();
   if(d.ok){
@@ -222,29 +229,29 @@ async function doAuth(){
     else{
       user=d.user;
       localStorage.setItem('sf_user',JSON.stringify(user));
-      closeAll();updateAll();loadOrderCount();
-      // FIXED: First push local guest cart to backend, then load backend
-      const guestCart=localStorage.getItem('sf_cart_guest');
-      if(guestCart){
-        try{
-          const gc=JSON.parse(guestCart);
-          for(const it of gc){
-            for(let i=0;i<it.qty;i++) await syncAddToBackend(it.id);
-          }
-        }catch{}
+      // If website cart empty, restore once from backend (in case user added on other device)
+      if(CART.length===0){
+        await loadCartFromBackendOnce();
+      } else {
+        // Website has items -> push to backend for app
+        await syncFullCartToBackend();
       }
-      await loadCartFromBackend();
+      closeAll();updateAll();loadOrderCount();
       showToast('Welcome '+user.email);
     }
   }else{if(msgEl) msgEl.innerText=d.error||'Error';}
 }
 function logout(){localStorage.removeItem('sf_user');user=null;CART=[];updateAll();closeAll();showToast('Logged out');setTimeout(()=>openAuth(),500);}
 function saveCart(){localStorage.setItem('sf_cart_'+(user?.email||'guest'),JSON.stringify(CART));updateAll();}
-function addToCart(id){
+
+async function addToCart(id){
   if(!user){openAuth();return showToast('Login first');}
   const p=PRODUCTS.find(x=>x.id==id); if(!p) return;
   const e=CART.find(c=>c.id==id); if(e) e.qty++; else CART.push({...p,qty:1});
-  saveCart(); syncAddToBackend(id); showToast('Added ✅ synced to app');
+  saveCart();
+  const ok = await syncAddToBackend(id);
+  if(ok) showToast('Added - now in mobile app too ✅');
+  else showToast('Added locally, sync failed');
 }
 function changeQty(i,d){CART[i].qty=Math.max(1,CART[i].qty+d);saveCart();syncFullCartToBackend();}
 function removeItem(i){CART.splice(i,1);saveCart();syncFullCartToBackend();}
@@ -302,7 +309,7 @@ async function doCheckout(){
   const d=await r.json();
   if(d.ok){
     showToast('Order #'+d.order_id+' placed'); CART=[]; saveCart();
-    await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})});
+    await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})});
     closeAll(); loadOrderCount();
   }else alert(d.error||'Failed');
 }
