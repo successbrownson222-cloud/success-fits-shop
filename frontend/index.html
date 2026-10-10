@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html><head>
+<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Success Fits</title>
 <link rel="manifest" href="/manifest.json">
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui}
-body{background:#070707;color:#fff;padding:0 14px 170px}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui}body{background:#070707;color:#fff;padding:0 14px 170px}
 input,select{background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;padding:12px;border-radius:12px;width:100%;margin-bottom:10px}
 .header{position:sticky;top:0;z-index:50;background:#070707;display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid #1a1a1a}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
@@ -39,7 +37,7 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Clothes');closeAll()">Clothes</div>
 <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="viewOrders();closeAll()">My Orders <span id="menuOrderCount">0</span></div>
 <div id="menuAdmin" style="display:none;padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="location.href='/admin'">Admin Dashboard</div>
-<div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="openAuth();closeAll()">Login / Create Account</div>
+<div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a;color:#ff2d55;font-weight:700" onclick="openAuth();closeAll()">Login / Create Account</div>
 <div id="menuLogout" style="display:none;padding:14px 0;color:#ff2d55" onclick="logout();closeAll()">Logout</div>
 </div>
 <div id="cartDrawer">
@@ -61,7 +59,11 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 <div style="background:#111;border:1px solid #222;padding:14px;border-radius:16px;margin:14px 0"><div style="font-size:11px;color:#888">WELCOME</div><div style="font-weight:900" id="who">Guest — Login to shop</div><div style="font-size:11px;color:#0f0" id="status">Secure • Pay on delivery</div></div>
 <div class="filters"><button class="active" onclick="filterCat('All',this)">All</button><button onclick="filterCat('Shoes',this)">Shoes</button><button onclick="filterCat('Clothes',this)">Clothes</button><button onclick="filterCat('Jewelry',this)">Jewelry</button></div>
 <div id="grid" class="grid"></div>
-<footer><h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos.</p><div style="color:#333;font-size:11px">© 2026 SUCCESS FITS — Lagos NG</div></footer>
+<footer>
+<h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos. Pay on delivery.</p>
+<button id="installBtn" style="display:none;width:100%;padding:14px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:900;margin:12px 0">📲 Install Mobile App</button>
+<p style="color:#333;font-size:11px;margin-top:10px">© 2026 SUCCESS FITS — Lagos NG • <span style="color:#888" onclick="location.href='/admin'">Admin</span></p>
+</footer>
 <div class="bottomNav"><button onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button><button onclick="filterCat('Shoes')">👟 Shoes</button><button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button><button onclick="viewOrders()">📦 Orders</button></div>
 <script src="/script.js"></script>
 </body></html>
