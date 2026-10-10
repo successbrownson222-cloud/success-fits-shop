@@ -1,0 +1,16 @@
+{
+  "name": "Success Fits",
+  "short_name": "Success Fits",
+  "description": "Premium drip from Lagos - Pay on delivery",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070707",
+  "theme_color": "#070707",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/512x512.png?text=SF",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
