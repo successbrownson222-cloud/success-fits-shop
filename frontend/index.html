@@ -1,9 +1,13 @@
-<!DOCTYPE html><html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Success Fits</title>
 <link rel="manifest" href="/manifest.json">
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui}body{background:#070707;color:#fff;padding:0 14px 170px}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui}
+body{background:#070707;color:#fff;padding:0 14px 170px}
 input,select{background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;padding:12px;border-radius:12px;width:100%;margin-bottom:10px}
 .header{position:sticky;top:0;z-index:50;background:#070707;display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid #1a1a1a}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
@@ -27,51 +31,73 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 .filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0}
 .filters button{padding:9px 16px;border-radius:100px;border:1px solid #222;background:#111;color:#aaa;white-space:nowrap}
 .filters button.active{background:#fff;color:#000}
-</style></head><body>
-<div id="toast"></div><div id="overlay" class="overlay" onclick="closeAll()"></div>
+/* helpers for templates */
+.cartRow{display:flex;gap:10px;background:#151515;border:1px solid #222;padding:10px;border-radius:14px;margin-bottom:8px}
+.qtyBtn{width:28px;height:28px;background:#222;color:#fff;border:none;border-radius:6px}
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+<div id="overlay" class="overlay" onclick="closeAll()"></div>
+
+<!-- MENU -->
 <div id="menuDrawer">
-<div style="display:flex;justify-content:space-between;margin-bottom:20px"><b>MENU</b><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div>
-<div style="background:#111;border:1px solid #222;padding:14px;border-radius:14px;margin-bottom:16px"><div id="menuName">Guest</div><div id="menuEmail" style="color:#888;font-size:12px">Not logged in</div></div>
-<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('All');closeAll()">All</div>
-<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Shoes');closeAll()">Shoes</div>
-<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Clothes');closeAll()">Clothes</div>
-<div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="viewOrders();closeAll()">My Orders <span id="menuOrderCount">0</span></div>
-<div id="menuAdmin" style="display:none;padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="location.href='/admin'">Admin Dashboard</div>
-<div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a;color:#ff2d55;font-weight:700" onclick="openAuth();closeAll()">Login / Create Account</div>
-<div id="menuLogout" style="display:none;padding:14px 0;color:#ff2d55" onclick="logout();closeAll()">Logout</div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:20px"><b>MENU</b><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div>
+  <div style="background:#111;border:1px solid #222;padding:14px;border-radius:14px;margin-bottom:16px">
+    <div id="menuName">Guest</div>
+    <div id="menuEmail" style="color:#888;font-size:12px">Not logged in</div>
+  </div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('All');closeAll()">All</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Shoes');closeAll()">Shoes</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Clothes');closeAll()">Clothes</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="viewOrders();closeAll()">My Orders <span id="menuOrderCount">0</span></div>
+  <div id="menuAdmin" style="display:none;padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="location.href='/admin'">Admin Dashboard</div>
+  <div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a;color:#ff2d55;font-weight:700" onclick="openAuth();closeAll()">Login / Create Account</div>
+  <div id="menuLogout" style="display:none;padding:14px 0;color:#ff2d55" onclick="logout();closeAll()">Logout</div>
 </div>
+
+<!-- CART -->
 <div id="cartDrawer">
-<h2 style="display:flex;justify-content:space-between">Cart <span id="cartCount2" style="background:#ff2d55;padding:2px 10px;border-radius:20px;font-size:14px">0</span> <span onclick="closeAll()">✕</span></h2>
-<div id="cartList" style="margin-top:16px;flex:1"></div>
-<div style="background:#151515;padding:14px;border-radius:16px;margin-top:12px;border:1px solid #222">
-<input id="c_fullname" placeholder="Full Name">
-<input id="c_phone" placeholder="Phone / WhatsApp">
-<select id="c_state" onchange="loadLGAs()"><option value="">Select State</option></select>
-<select id="c_lga"><option value="">Select LGA</option></select>
-<input id="c_address" placeholder="Street Address">
-<div style="display:flex;gap:8px"><input id="c_date" type="date" style="flex:1"><select id="c_time" style="flex:1"><option>Morning (9am-12pm)</option><option>Afternoon (12pm-4pm)</option><option>Evening (4pm-8pm)</option></select></div>
-<div style="display:flex;justify-content:space-between;font-weight:900;margin:12px 0"><span>Total</span><span id="c_total">$0</span></div>
-<button onclick="doCheckout()" style="width:100%;padding:15px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:900">Place Order</button>
-</div></div>
+  <h2 style="display:flex;justify-content:space-between">Cart <span id="cartCount2" style="background:#ff2d55;padding:2px 10px;border-radius:20px;font-size:14px">0</span> <span onclick="closeAll()">✕</span></h2>
+  <div id="cartList" style="margin-top:16px;flex:1"></div>
+  <div style="background:#151515;padding:14px;border-radius:16px;margin-top:12px;border:1px solid #222">
+    <input id="c_fullname" placeholder="Full Name">
+    <input id="c_phone" placeholder="Phone / WhatsApp">
+    <select id="c_state" onchange="loadLGAs()"><option value="">Select State</option></select>
+    <select id="c_lga"><option value="">Select LGA</option></select>
+    <input id="c_address" placeholder="Street Address">
+    <div style="display:flex;gap:8px"><input id="c_date" type="date" style="flex:1"><select id="c_time" style="flex:1"><option>Morning (9am-12pm)</option><option>Afternoon (12pm-4pm)</option><option>Evening (4pm-8pm)</option></select></div>
+    <div style="display:flex;justify-content:space-between;font-weight:900;margin:12px 0"><span>Total</span><span id="c_total">$0</span></div>
+    <button onclick="doCheckout()" style="width:100%;padding:15px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:900">Place Order</button>
+  </div>
+</div>
+
 <div id="ordersModal"><div style="max-width:500px;margin:auto;background:#0f0f0f;padding:20px;border-radius:20px;width:100%"><div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>My Orders</h2><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div><div id="ordersList"></div></div></div>
 <div id="authModal"><div class="authBox"><h2 id="authTitle">Create Account</h2><input id="a_name" placeholder="Full Name"><input id="a_email" placeholder="Email"><input id="a_pass" type="password" placeholder="Password"><button style="width:100%;padding:14px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:800;margin-top:6px" onclick="doAuth()">Continue</button><p style="text-align:center;margin-top:12px;font-size:13px"><span onclick="toggleAuth()" id="authSwitch" style="color:#ff2d55">Have account? Login</span> • <span onclick="closeAll()" style="color:#888">Close</span></p><div id="authMsg" style="font-size:12px;margin-top:10px"></div></div></div>
-<div class="header"><div style="display:flex;gap:10px;align-items:center"><div onclick="openMenu()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px">☰</div><div style="font-weight:900">SUCCESS FITS.</div></div><div style="display:flex;gap:10px;align-items:center"><div onclick="openCart()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px;position:relative">🛒<span id="count" style="position:absolute;top:-6px;right:-6px;background:#ff2d55;color:#fff;font-size:10px;min-width:18px;height:18px;border-radius:20px;display:flex;align-items:center;justify-content:center">0</span></div><div id="avatar" onclick="openMenu()" style="width:40px;height:40px;background:#fff;color:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900">S</div></div></div>
+
+<div class="header">
+  <div style="display:flex;gap:10px;align-items:center"><div onclick="openMenu()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px">☰</div><div style="font-weight:900">SUCCESS FITS.</div></div>
+  <div style="display:flex;gap:10px;align-items:center"><div onclick="openCart()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px;position:relative">🛒<span id="count" style="position:absolute;top:-6px;right:-6px;background:#ff2d55;color:#fff;font-size:10px;min-width:18px;height:18px;border-radius:20px;display:flex;align-items:center;justify-content:center">0</span></div><div id="avatar" onclick="openMenu()" style="width:40px;height:40px;background:#fff;color:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900">S</div></div>
+</div>
+
 <div style="background:#111;border:1px solid #222;padding:14px;border-radius:16px;margin:14px 0"><div style="font-size:11px;color:#888">WELCOME</div><div style="font-weight:900" id="who">Guest — Login to shop</div><div style="font-size:11px;color:#0f0" id="status">Secure • Pay on delivery</div></div>
 <div class="filters"><button class="active" onclick="filterCat('All',this)">All</button><button onclick="filterCat('Shoes',this)">Shoes</button><button onclick="filterCat('Clothes',this)">Clothes</button><button onclick="filterCat('Jewelry',this)">Jewelry</button></div>
 <div id="grid" class="grid"></div>
+
 <footer>
 <h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos. Pay on delivery.</p>
 <button id="installBtn" style="width:100%;padding:14px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:900;margin:12px 0">📲 Install Mobile App</button>
 <p style="color:#333;font-size:11px;margin-top:10px">© 2026 SUCCESS FITS — Lagos NG • <span style="color:#888" onclick="location.href='/admin'">Admin</span></p>
 </footer>
+
 <div class="bottomNav"><button onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button><button onclick="filterCat('Shoes')">👟 Shoes</button><button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button><button onclick="viewOrders()">📦 Orders</button></div>
+
+<!-- TEMPLATES - HTML stays here, not in JS -->
+<template id="productCardTpl"><div class="card"><img><div class="p-name" style="font-weight:700;margin-top:6px;font-size:14px"></div><div class="p-price" style="color:#aaa"></div><button>Add to Cart</button></div></template>
+<template id="cartRowTpl"><div class="cartRow"><img style="width:56px;height:56px;border-radius:10px"><div style="flex:1"><div class="c-name" style="font-size:13px"></div><div class="c-price" style="color:#888"></div><div style="display:flex;gap:6px;margin-top:6px"><button class="qtyBtn dec">-</button><span class="c-qty"></span><button class="qtyBtn inc">+</button></div></div><button class="qtyBtn del">✕</button></div></template>
+<template id="orderCardTpl"><div class="orderCard"><b class="o-title"></b><div class="o-details" style="color:#888;font-size:12px"></div><div style="margin-top:8px"><button class="o-del" style="background:#222;color:#f55;border:1px solid #333;padding:8px 12px;border-radius:10px">Delete</button></div></div></template>
+
 <script src="/script.js"></script>
-<script>
-let deferredPrompt=null;
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;});
-document.getElementById('installBtn').addEventListener('click',async()=>{
- if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;}
- else{alert('To install: Chrome menu ⋮ → Add to Home screen / Install app');}
-});
-</script>
-</body></html>
+</body>
+</html>
