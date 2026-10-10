@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image, TextInput, Modal, ScrollView } from 'react-native';
 
-// YOUR REAL SITE URL - FIXED
 const API = 'https://success-fits-shop.vercel.app';
 
 export default function App(){
   const [products, setProducts]=useState([]);
   const [cart, setCart]=useState([]);
-  const [email, setEmail]=useState(''); // EMPTY - no default email
+  const [email, setEmail]=useState(''); // EMPTY - user must type same email as website
   const [loggedIn, setLoggedIn]=useState(false);
   const [showAuth, setShowAuth]=useState(false);
   const [showCart, setShowCart]=useState(false);
@@ -20,34 +19,53 @@ export default function App(){
     try{
       const r = await fetch(API+'/api/products');
       const d = await r.json();
-      if(Array.isArray(d)) setProducts(d);
-      else if(d.products) setProducts(d.products);
-    }catch{}
+      const list = Array.isArray(d) ? d : (d.products || []);
+      setProducts(list);
+    }catch(e){ console.log('products err', e) }
   };
 
-  // This loads cart from website DB for same email
-  const loadCart = async (e) => {
+  // silent=true = no toast (for auto-polling)
+  const loadCart = async (e, silent=false) => {
     const clean = (e || email || '').toLowerCase().trim();
     if(!clean) return;
     try{
       const r = await fetch(`${API}/api/cart?email=${encodeURIComponent(clean)}`);
       const d = await r.json();
       setCart(d.items || []);
-      if((d.items||[]).length > 0){
+      if(!silent && (d.items||[]).length > 0){
         showToast(`${d.items.length} items synced from website`);
       }
-    }catch{}
+    }catch(err){ console.log('loadCart err', err) }
   };
 
   const doLogin = async () => {
     const clean = inputEmail.toLowerCase().trim();
     if(!clean.includes('@')) return showToast('Enter valid email');
-    setEmail(clean);
-    setLoggedIn(true);
-    setShowAuth(false);
-    showToast('Logged in: '+clean);
-    // SYNC NOW - load whatever user added on website with same email
-    await loadCart(clean);
+    try{
+      // Use simple login endpoint that returns cart
+      const r = await fetch(`${API}/api/login`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({email: clean})
+      });
+      const d = await r.json();
+      setEmail(clean);
+      setLoggedIn(true);
+      setShowAuth(false);
+      if(d.items && d.items.length){
+        setCart(d.items);
+        showToast(`${d.items.length} items synced from website`);
+      }else{
+        await loadCart(clean, false);
+        showToast('Logged in: '+clean);
+      }
+    }catch{
+      setEmail(clean);
+      setLoggedIn(true);
+      setShowAuth(false);
+      await loadCart(clean, false);
+      showToast('Logged in: '+clean);
+    }
   };
 
   const doLogout = () => { 
@@ -71,19 +89,28 @@ export default function App(){
       });
       const d = await r.json(); 
       if(d.items) setCart(d.items); 
-      else await loadCart(email);
+      else await loadCart(email, true);
       showToast('Added ✅ synced to website');
     }catch{
-      showToast('Add failed');
+      showToast('Add failed - check API');
     }
+  };
+
+  const removeFromCart = async (product_id) => {
+    try{
+      await fetch(`${API}/api/cart?email=${encodeURIComponent(email.toLowerCase())}&product_id=${product_id}`,{method:'DELETE'});
+      await loadCart(email, true);
+      showToast('Removed');
+    }catch{}
   };
 
   useEffect(()=>{ loadProducts(); },[]);
 
-  // Live sync website -> app every 5 sec when logged in
+  // Live sync website -> app every 5 sec, silent (no toast spam)
   useEffect(()=>{
     if(!loggedIn || !email) return;
-    const iv=setInterval(()=>{ loadCart(email); },5000);
+    loadCart(email, true);
+    const iv=setInterval(()=>{ loadCart(email, true); },5000);
     return ()=>clearInterval(iv);
   },[loggedIn, email]);
 
@@ -111,6 +138,7 @@ export default function App(){
         data={products} 
         numColumns={2} 
         keyExtractor={i=>String(i.id)}
+        contentContainerStyle={{paddingBottom:20}}
         renderItem={({item})=>(
           <View style={s.card}>
             <Image source={{uri:item.image}} style={s.img}/>
@@ -139,11 +167,14 @@ export default function App(){
                   <Text style={{color:'#fff'}}>{it.name}</Text>
                   <Text style={{color:'#ff2d55'}}>${it.price}</Text>
                 </View>
+                <TouchableOpacity onPress={()=>removeFromCart(it.id)} style={{backgroundColor:'#222',padding:8,borderRadius:8}}>
+                  <Text style={{color:'#fff'}}>✕</Text>
+                </TouchableOpacity>
               </View>
             ))}
             {cart.length===0 && (
               <Text style={{color:'#666',textAlign:'center',marginTop:40}}>
-                Cart empty{"\n"}Add items on website {API} with same email, they will appear here automatically
+                Cart empty{"\n"}Add items on website with SAME email{"\n"}They will appear here automatically
               </Text>
             )}
           </ScrollView>
@@ -154,7 +185,7 @@ export default function App(){
         <View style={s.modalBg}>
           <View style={s.modalBox}>
             <Text style={{color:'#fff',fontWeight:'900',fontSize:18,marginBottom:12}}>Login to sync cart</Text>
-            <Text style={{color:'#888',fontSize:12,marginBottom:8}}>Enter the SAME email you used on success-fits-shop.vercel.app</Text>
+            <Text style={{color:'#888',fontSize:12,marginBottom:8}}>Enter SAME email as website (success-fits-shop.vercel.app)</Text>
             <TextInput 
               placeholder="Enter your email (same as website)" 
               placeholderTextColor="#888" 
@@ -163,6 +194,7 @@ export default function App(){
               style={s.input} 
               autoCapitalize="none"
               keyboardType="email-address"
+              autoCorrect={false}
             />
             <TouchableOpacity style={s.modalBtn} onPress={doLogin}>
               <Text style={s.btnT}>Continue</Text>
