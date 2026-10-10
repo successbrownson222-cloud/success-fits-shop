@@ -59,6 +59,12 @@ class OrderReq(BaseModel):
     email: str; items: str = ""; total: int = 0; address: str = ""; phone: str = ""
     state: str = ""; lga: str = ""; delivery_date: str = ""; delivery_time: str = ""
 
+class CartAddReq(BaseModel):
+    email: str; product_id: int
+
+class CartClearReq(BaseModel):
+    email: str
+
 def find_frontend_file(name: str):
     roots = [pathlib.Path(__file__).parent.parent / "frontend", pathlib.Path.cwd() / "frontend", pathlib.Path("/vercel/path0/frontend"), pathlib.Path("frontend")]
     for r in roots:
@@ -146,6 +152,112 @@ def del_product(request: Request):
         return {"success": True}
     except Exception as e: return {"error": str(e)}
 
+# === CART SYNC - THIS WAS MISSING AND CAUSED YOUR VIDEO BUG ===
+def ensure_cart_table(cur):
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS carts (
+            id SERIAL PRIMARY KEY,
+            email TEXT NOT NULL,
+            product_id INT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+@app.get("/api/cart")
+def get_cart(email: str = ""):
+    try:
+        clean = clean_email(email)
+        if not clean: return {"items": []}
+        conn = get_conn()
+        if not conn: return {"items": []}
+        cur = conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("""
+            SELECT p.* FROM carts c
+            JOIN products p ON p.id = c.product_id
+            WHERE LOWER(c.email) = %s
+            ORDER BY c.created_at DESC
+        """, (clean,))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {"items": rows or []}
+    except Exception as e:
+        return {"items": [], "error": str(e)}
+
+@app.post("/api/cart/add")
+def add_cart(req: CartAddReq):
+    try:
+        clean = clean_email(req.email)
+        if not clean: return JSONResponse({"error":"email required"}, status_code=400)
+        conn = get_conn()
+        if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
+        cur = conn.cursor()
+        ensure_cart_table(cur)
+        # prevent duplicate
+        cur.execute("SELECT id FROM carts WHERE LOWER(email)=%s AND product_id=%s", (clean, req.product_id))
+        if not cur.fetchone():
+            cur.execute("INSERT INTO carts (email, product_id) VALUES (%s,%s)", (clean, req.product_id))
+            conn.commit()
+        cur.execute("""
+            SELECT p.* FROM carts c
+            JOIN products p ON p.id = c.product_id
+            WHERE LOWER(c.email)=%s
+        """, (clean,))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {"ok": True, "items": rows}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.api_route("/api/cart/clear", methods=["POST","DELETE","OPTIONS"])
+def clear_cart(request: Request, email: str = ""):
+    # support both JSON body and query param
+    try:
+        clean = clean_email(email)
+        if not clean:
+            try:
+                body = request.json() if hasattr(request, 'json') else None
+            except:
+                body = None
+            # try pydantic parse from raw
+            import json
+            try:
+                raw = request._body if hasattr(request, '_body') else b''
+                if raw:
+                    j = json.loads(raw)
+                    clean = clean_email(j.get('email',''))
+            except:
+                pass
+        if not clean:
+            # fallback to query param email in body dict
+            qp_email = request.query_params.get('email','')
+            clean = clean_email(qp_email)
+        if not clean:
+            return JSONResponse({"error":"email required"}, status_code=400)
+        conn = get_conn()
+        if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
+        cur = conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("DELETE FROM carts WHERE LOWER(email)=%s", (clean,))
+        conn.commit(); cur.close(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.delete("/api/cart")
+def delete_one_cart_item(email: str = "", product_id: int = 0):
+    try:
+        clean = clean_email(email)
+        conn = get_conn()
+        if not conn: return {"error":"DB not connected"}
+        cur = conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("DELETE FROM carts WHERE LOWER(email)=%s AND product_id=%s", (clean, product_id))
+        conn.commit(); cur.close(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
 # --- ORDERS PRO ---
 @app.post("/api/orders")
 def create_order(req: OrderReq):
@@ -224,7 +336,12 @@ def root_page():
 
 @app.get("/{full_path:path}")
 def catch_all(full_path: str):
+    # serve frontend static files including script.js, manifest.json etc
     fp = find_frontend_file(full_path)
     if fp: return FileResponse(fp)
+    # also check for /script.js -> frontend/script.js
+    if full_path in ["script.js","manifest.json","style.css"]:
+        fp2 = find_frontend_file(full_path)
+        if fp2: return FileResponse(fp2)
     if INDEX_HTML: return FileResponse(INDEX_HTML)
     return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404)
