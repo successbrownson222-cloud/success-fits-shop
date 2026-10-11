@@ -6,11 +6,11 @@ const API = 'https://success-fits-shop.vercel.app';
 export default function App(){
   const [products, setProducts]=useState([]);
   const [cart, setCart]=useState([]);
-  const [email, setEmail]=useState(''); // EMPTY - user must type same email as website
+  const [email, setEmail]=useState('');
   const [loggedIn, setLoggedIn]=useState(false);
   const [showAuth, setShowAuth]=useState(false);
   const [showCart, setShowCart]=useState(false);
-  const [inputEmail, setInputEmail]=useState(''); // EMPTY
+  const [inputEmail, setInputEmail]=useState('');
   const [toast, setToast]=useState('');
 
   const showToast=(m)=>{ setToast(m); setTimeout(()=>setToast(''),3000) };
@@ -19,12 +19,11 @@ export default function App(){
     try{
       const r = await fetch(API+'/api/products');
       const d = await r.json();
-      const list = Array.isArray(d) ? d : (d.products || []);
-      setProducts(list);
+      setProducts(Array.isArray(d) ? d : (d.products || []));
     }catch(e){ console.log('products err', e) }
   };
 
-  // silent=true = no toast (for auto-polling)
+  // ONE WAY ONLY: Website -> App (read-only)
   const loadCart = async (e, silent=false) => {
     const clean = (e || email || '').toLowerCase().trim();
     if(!clean) return;
@@ -32,89 +31,36 @@ export default function App(){
       const r = await fetch(`${API}/api/cart?email=${encodeURIComponent(clean)}`);
       const d = await r.json();
       setCart(d.items || []);
-      if(!silent && (d.items||[]).length > 0){
-        showToast(`${d.items.length} items synced from website`);
+      if(!silent){
+        showToast(d.items?.length ? `${d.items.length} items from website ✅` : 'Cart empty - add on website');
       }
-    }catch(err){ console.log('loadCart err', err) }
+    }catch(err){ console.log('loadCart err', err); if(!silent) showToast('Sync failed'); }
   };
 
   const doLogin = async () => {
     const clean = inputEmail.toLowerCase().trim();
     if(!clean.includes('@')) return showToast('Enter valid email');
-    try{
-      // Use simple login endpoint that returns cart
-      const r = await fetch(`${API}/api/login`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({email: clean})
-      });
-      const d = await r.json();
-      setEmail(clean);
-      setLoggedIn(true);
-      setShowAuth(false);
-      if(d.items && d.items.length){
-        setCart(d.items);
-        showToast(`${d.items.length} items synced from website`);
-      }else{
-        await loadCart(clean, false);
-        showToast('Logged in: '+clean);
-      }
-    }catch{
-      setEmail(clean);
-      setLoggedIn(true);
-      setShowAuth(false);
-      await loadCart(clean, false);
-      showToast('Logged in: '+clean);
-    }
+    setEmail(clean);
+    setLoggedIn(true);
+    setShowAuth(false);
+    await loadCart(clean, false);
   };
 
   const doLogout = () => { 
-    setEmail(''); 
-    setLoggedIn(false); 
-    setCart([]); 
-    setInputEmail('');
-    showToast('Logged out'); 
-  };
-
-  const addToCart = async (id) => {
-    if(!loggedIn || !email){
-      setShowAuth(true); 
-      return showToast('Login with same email as website first'); 
-    }
-    try{
-      const r = await fetch(API+'/api/cart/add',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({email:email.toLowerCase(), product_id:id})
-      });
-      const d = await r.json(); 
-      if(d.items) setCart(d.items); 
-      else await loadCart(email, true);
-      showToast('Added ✅ synced to website');
-    }catch{
-      showToast('Add failed - check API');
-    }
-  };
-
-  const removeFromCart = async (product_id) => {
-    try{
-      await fetch(`${API}/api/cart?email=${encodeURIComponent(email.toLowerCase())}&product_id=${product_id}`,{method:'DELETE'});
-      await loadCart(email, true);
-      showToast('Removed');
-    }catch{}
+    setEmail(''); setLoggedIn(false); setCart([]); setInputEmail(''); showToast('Logged out'); 
   };
 
   useEffect(()=>{ loadProducts(); },[]);
 
-  // Live sync website -> app every 5 sec, silent (no toast spam)
+  // Live sync: poll every 5s, silent
   useEffect(()=>{
     if(!loggedIn || !email) return;
     loadCart(email, true);
-    const iv=setInterval(()=>{ loadCart(email, true); },5000);
+    const iv=setInterval(()=> loadCart(email, true), 5000);
     return ()=>clearInterval(iv);
   },[loggedIn, email]);
 
-  const total = cart.reduce((s,i)=> s + (Number(i.price)||0),0);
+  const total = cart.reduce((s,i)=> s + (Number(i.price)||0) * (Number(i.qty)||1),0);
 
   return (
     <View style={s.container}>
@@ -129,7 +75,7 @@ export default function App(){
       </View>
 
       <Text style={s.sub}>
-        {loggedIn? `${email} • ${cart.length} items • Auto-sync ON` : 'Not logged in • Use SAME email as website to sync cart'}
+        {loggedIn? `${email} • ${cart.length} items • Live from website` : 'Not logged in • Use SAME email as website'}
       </Text>
       
       {toast? <Text style={s.toast}>{toast}</Text> : null}
@@ -144,8 +90,8 @@ export default function App(){
             <Image source={{uri:item.image}} style={s.img}/>
             <Text style={s.name} numberOfLines={1}>{item.name}</Text>
             <Text style={s.price}>${item.price}</Text>
-            <TouchableOpacity style={s.btn} onPress={()=>addToCart(item.id)}>
-              <Text style={s.btnT}>Add</Text>
+            <TouchableOpacity style={[s.btn,{backgroundColor:'#222'}]} onPress={()=> showToast('Add items on website - success-fits-shop.vercel.app')}>
+              <Text style={[s.btnT,{color:'#888'}]}>View Only</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -164,17 +110,14 @@ export default function App(){
               <View key={idx} style={s.cartRow}>
                 <Image source={{uri:it.image}} style={{width:50,height:50,borderRadius:8}}/>
                 <View style={{marginLeft:10,flex:1}}>
-                  <Text style={{color:'#fff'}}>{it.name}</Text>
+                  <Text style={{color:'#fff'}}>{it.name} x{it.qty||1}</Text>
                   <Text style={{color:'#ff2d55'}}>${it.price}</Text>
                 </View>
-                <TouchableOpacity onPress={()=>removeFromCart(it.id)} style={{backgroundColor:'#222',padding:8,borderRadius:8}}>
-                  <Text style={{color:'#fff'}}>✕</Text>
-                </TouchableOpacity>
               </View>
             ))}
             {cart.length===0 && (
               <Text style={{color:'#666',textAlign:'center',marginTop:40}}>
-                Cart empty{"\n"}Add items on website with SAME email{"\n"}They will appear here automatically
+                Cart empty{"\n"}Add items on website with SAME email{"\n"}success-fits-shop.vercel.app{"\n"}They appear here in 5 sec
               </Text>
             )}
           </ScrollView>
@@ -185,16 +128,15 @@ export default function App(){
         <View style={s.modalBg}>
           <View style={s.modalBox}>
             <Text style={{color:'#fff',fontWeight:'900',fontSize:18,marginBottom:12}}>Login to sync cart</Text>
-            <Text style={{color:'#888',fontSize:12,marginBottom:8}}>Enter SAME email as website (success-fits-shop.vercel.app)</Text>
+            <Text style={{color:'#888',fontSize:12,marginBottom:8}}>Enter SAME email as website</Text>
             <TextInput 
-              placeholder="Enter your email (same as website)" 
+              placeholder="brownsonsuccess033@gmail.com" 
               placeholderTextColor="#888" 
               value={inputEmail} 
               onChangeText={setInputEmail} 
               style={s.input} 
               autoCapitalize="none"
               keyboardType="email-address"
-              autoCorrect={false}
             />
             <TouchableOpacity style={s.modalBtn} onPress={doLogin}>
               <Text style={s.btnT}>Continue</Text>
