@@ -83,6 +83,28 @@ INDEX_HTML = find_frontend_file("index.html")
 @app.get("/api/health")
 def health(): return {"ok": True, "bcrypt": HAS_BCRYPT}
 
+def ensure_cart_table(cur):
+    # create if not exists
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS carts (
+            id SERIAL PRIMARY KEY, 
+            email TEXT NOT NULL, 
+            product_id INT NOT NULL, 
+            qty INT DEFAULT 1,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    """)
+    # MIGRATE old table - add missing columns
+    try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS qty INT DEFAULT 1;")
+    except: pass
+    try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();")
+    except: pass
+    try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS email TEXT;")
+    except: pass
+    # ensure unique constraint for upsert
+    try: cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product ON carts(email, product_id);")
+    except: pass
+
 @app.post("/api/login")
 def simple_login(req: SimpleLogin):
     clean = clean_email(req.email)
@@ -90,14 +112,14 @@ def simple_login(req: SimpleLogin):
         conn=get_conn()
         if not conn: return {"ok":True, "items":[], "email":clean}
         cur=conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT, product_id INT, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW(), UNIQUE(email, product_id))")
-        cur.execute("SELECT p.*, c.qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=%s ORDER BY c.created_at DESC", (clean,))
+        ensure_cart_table(cur)
+        cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
         rows=cur.fetchall()
         cur.close(); conn.close()
         return {"ok":True, "items":rows or [], "email":clean}
     except Exception as e:
         print("login err", e)
-        return {"ok":True, "items":[], "email":clean}
+        return {"ok":True, "items":[], "email":clean, "error":str(e)}
 
 @app.post("/api/auth/signup")
 def signup(data: AuthReq):
@@ -175,32 +197,16 @@ def del_product(request: Request):
         return {"success": True}
     except Exception as e: return {"error": str(e)}
 
-def ensure_cart_table(cur):
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS carts (
-            id SERIAL PRIMARY KEY, 
-            email TEXT NOT NULL, 
-            product_id INT NOT NULL, 
-            qty INT DEFAULT 1,
-            created_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(email, product_id)
-        );
-    """)
-    # migrate old table without qty
-    try:
-        cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS qty INT DEFAULT 1;")
-    except: pass
-
 @app.get("/api/cart")
 def get_cart(email: str = ""):
     try:
         clean = clean_email(email)
-        if not clean: return {"items": []}
+        if not clean: return {"items": [], "ok": True}
         conn = get_conn()
-        if not conn: return {"items": [], "error":"DB not connected"}
+        if not conn: return {"items": [], "error":"DB not connected", "ok": False}
         cur = conn.cursor()
         ensure_cart_table(cur)
-        cur.execute("SELECT p.*, c.qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.created_at DESC", (clean,))
+        cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
         rows = cur.fetchall()
         cur.close(); conn.close()
         return {"items": rows or [], "ok": True}
@@ -217,12 +223,11 @@ def add_cart(req: CartAddReq):
         if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
         cur = conn.cursor()
         ensure_cart_table(cur)
-        # ONE WAY SYNC FIX: upsert with qty increment
         cur.execute("""
             INSERT INTO carts (email, product_id, qty) VALUES (%s,%s,1)
             ON CONFLICT(email, product_id) DO UPDATE SET qty = carts.qty + 1
         """, (clean, int(req.product_id)))
-        cur.execute("SELECT p.*, c.qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.created_at DESC", (clean,))
+        cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
         rows = cur.fetchall()
         cur.close(); conn.close()
         return {"ok": True, "items": rows}
