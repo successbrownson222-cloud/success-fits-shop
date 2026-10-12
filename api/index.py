@@ -81,10 +81,9 @@ ADMIN_HTML = find_frontend_file("admin.html")
 INDEX_HTML = find_frontend_file("index.html")
 
 @app.get("/api/health")
-def health(): return {"ok": True, "bcrypt": HAS_BCRYPT}
+def health(): return {"ok": True, "bcrypt": HAS_BCRYPT, "site": "https://success-fits-shop.vercel.app"}
 
 def ensure_cart_table(cur):
-    # create if not exists
     cur.execute("""
         CREATE TABLE IF NOT EXISTS carts (
             id SERIAL PRIMARY KEY, 
@@ -94,15 +93,13 @@ def ensure_cart_table(cur):
             created_at TIMESTAMP DEFAULT NOW()
         );
     """)
-    # MIGRATE old table - add missing columns
     try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS qty INT DEFAULT 1;")
     except: pass
     try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();")
     except: pass
     try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS email TEXT;")
     except: pass
-    # ensure unique constraint for upsert
-    try: cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product ON carts(email, product_id);")
+    try: cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product ON carts(LOWER(email), product_id);")
     except: pass
 
 @app.post("/api/login")
@@ -119,7 +116,7 @@ def simple_login(req: SimpleLogin):
         return {"ok":True, "items":rows or [], "email":clean}
     except Exception as e:
         print("login err", e)
-        return {"ok":True, "items":[], "email":clean, "error":str(e)}
+        return {"ok":True, "items":[], "email":clean}
 
 @app.post("/api/auth/signup")
 def signup(data: AuthReq):
@@ -223,10 +220,12 @@ def add_cart(req: CartAddReq):
         if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
         cur = conn.cursor()
         ensure_cart_table(cur)
-        cur.execute("""
-            INSERT INTO carts (email, product_id, qty) VALUES (%s,%s,1)
-            ON CONFLICT(email, product_id) DO UPDATE SET qty = carts.qty + 1
-        """, (clean, int(req.product_id)))
+        cur.execute("SELECT id, qty FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
+        existing = cur.fetchone()
+        if existing:
+            cur.execute("UPDATE carts SET qty = COALESCE(qty,0)+1 WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
+        else:
+            cur.execute("INSERT INTO carts (email, product_id, qty) VALUES (%s,%s,1)", (clean, int(req.product_id)))
         cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
         rows = cur.fetchall()
         cur.close(); conn.close()
