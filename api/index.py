@@ -1,208 +1,308 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import os, pathlib
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
+
+try:
+    import bcrypt
+    HAS_BCRYPT = True
+except:
+    HAS_BCRYPT = False
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL","successbrown222@gmail.com").strip().lower()
-ADMIN_EMAILS = [e.strip().lower() for e in ADMIN_EMAIL.split(",") if e.strip()] if "," in ADMIN_EMAIL else [ADMIN_EMAIL] if ADMIN_EMAIL else ["successbrown222@gmail.com"]
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "successbrown222@gmail.com").strip().lower()
+ADMIN_EMAILS = [e.strip().lower() for e in ADMIN_EMAIL.split(",") if e.strip()] if ADMIN_EMAIL else ["successbrown222@gmail.com"]
 
 def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
-    if not url:
-        print("No DATABASE_URL env")
+    if not url: 
+        print("No DATABASE_URL")
         return None
     try:
-        conn = psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode="require")
+        conn = psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
         conn.autocommit = True
         return conn
     except Exception as e:
         print("DB connect fail", e)
         return None
 
-def clean_email(e): 
-    return e.strip().lower() if e else ""
-def is_admin(email):
-    return clean_email(email) in ADMIN_EMAILS
+def clean_email(e): return e.strip().lower() if e else ""
+def is_admin(email: str):
+    email = clean_email(email)
+    if not email: return False
+    if email in ADMIN_EMAILS: return True
+    try:
+        conn = get_conn()
+        if not conn: return False
+        cur = conn.cursor()
+        cur.execute("SELECT role FROM users WHERE LOWER(email)=%s", (email,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        return row and row.get('role') == 'admin'
+    except: return False
 
-def ensure_tables(conn):
-    cur = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
-    cur.execute("CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT, price INT, image TEXT, category TEXT)")
-    cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT NOT NULL, product_id INT NOT NULL, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW(), UNIQUE(email, product_id))")
-    cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-    cur.close()
+def hash_pw(pw: str):
+    if HAS_BCRYPT: return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+    import hashlib; return hashlib.sha256(pw.encode()).hexdigest()
+
+def check_pw(pw: str, hashed: str):
+    if HAS_BCRYPT:
+        try: return bcrypt.checkpw(pw.encode(), hashed.encode())
+        except: return False
+    import hashlib; return hashlib.sha256(pw.encode()).hexdigest() == hashed
+
+class AuthReq(BaseModel):
+    email: str; password: str; name: str = ""
+class ProductReq(BaseModel):
+    name: str; price: int; image: str = ""; category: str = "General"
+    secret: str = ""; admin_email: str = ""; adminEmail: str = ""
+class OrderReq(BaseModel):
+    email: str; items: str = ""; total: int = 0; address: str = ""; phone: str = ""
+    state: str = ""; lga: str = ""; delivery_date: str = ""; delivery_time: str = ""
+class CartAddReq(BaseModel):
+    email: str; product_id: int
+class CartClearReq(BaseModel):
+    email: str
+class SimpleLogin(BaseModel):
+    email: str
+
+def find_frontend_file(name: str):
+    roots = [pathlib.Path(__file__).parent.parent / "frontend", pathlib.Path.cwd() / "frontend", pathlib.Path("/vercel/path0/frontend"), pathlib.Path("frontend")]
+    for r in roots:
+        p = r / name
+        if p.exists(): return str(p)
+    return None
+
+ADMIN_HTML = find_frontend_file("admin.html")
+INDEX_HTML = find_frontend_file("index.html")
 
 @app.get("/api/health")
-def health():
+def health(): 
     conn = get_conn()
-    return {"ok": True, "db": bool(conn), "admin": ADMIN_EMAILS, "bcrypt": True}
+    return {"ok": True, "db": bool(conn), "bcrypt": HAS_BCRYPT, "admin": ADMIN_EMAILS}
+
+def ensure_cart_table(cur):
+    cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT NOT NULL, product_id INT NOT NULL, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW());")
+    try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS qty INT DEFAULT 1;")
+    except: pass
+    try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();")
+    except: pass
+    try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS email TEXT;")
+    except: pass
+    try: cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product ON carts(LOWER(email), product_id);")
+    except: pass
+
+@app.post("/api/login")
+def simple_login(req: SimpleLogin):
+    clean = clean_email(req.email)
+    try:
+        conn=get_conn()
+        if not conn: return {"ok":True, "items":[], "email":clean}
+        cur=conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
+        rows=cur.fetchall()
+        cur.close(); conn.close()
+        return {"ok":True, "items":rows or [], "email":clean}
+    except Exception as e:
+        print("login err", e)
+        return {"ok":True, "items":[], "email":clean}
+
+@app.post("/api/auth/signup")
+def signup(data: AuthReq):
+    email = clean_email(data.email)
+    if len(data.password) < 6: return {"error": "Password min 6 chars"}
+    conn = get_conn()
+    if not conn: return {"error": "DB not connected - check DATABASE_URL env"}
+    try:
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+        cur.execute("SELECT COUNT(*) as c FROM users WHERE role='admin'")
+        count = cur.fetchone()['c']
+        role = "admin" if count == 0 else "user"
+        cur.execute("INSERT INTO users (email,password,name,role) VALUES (%s,%s,%s,%s)", (email, hash_pw(data.password), data.name, role))
+        cur.close(); conn.close()
+        return {"ok": True, "role": role}
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            return {"error": "Email already exists, please login"}
+        return {"error": str(e)}
+
+@app.post("/api/auth/login")
+def auth_login(data: AuthReq):
+    try:
+        email = clean_email(data.email)
+        conn = get_conn()
+        if not conn: return {"error": "DB not connected"}
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
+        cur.execute("SELECT password, name, role FROM users WHERE LOWER(email)=%s", (email,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row: return {"error": "User not found - sign up first"}
+        if not check_pw(data.password, row.get('password') or ""):
+            return {"error": "Wrong password"}
+        return {"ok": True, "user": {"email": email, "name": row.get('name'), "role": row.get('role')}}
+    except Exception as e: return {"error": f"Server error: {e}"}
 
 @app.get("/api/products")
 def get_products():
-    conn = get_conn()
-    if not conn:
-        return []
     try:
-        ensure_tables(conn)
-        cur = conn.cursor()
-        cur.execute("SELECT id, name, price, image, category FROM products ORDER BY id DESC")
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        return rows
+        conn = get_conn()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT, price INT, image TEXT, category TEXT)")
+            cur.execute("SELECT id,name,price,image,category FROM products ORDER BY id DESC")
+            rows = cur.fetchall()
+            cur.close(); conn.close()
+            return rows or []
     except Exception as e:
         print(e)
-        return []
-
-@app.post("/api/auth/signup")
-async def signup(req: Request):
-    data = await req.json()
-    email = clean_email(data.get("email",""))
-    pw = data.get("password","")
-    name = data.get("name","")
-    if not email or len(pw)<4:
-        return JSONResponse({"error":"Invalid"}, status_code=400)
-    conn = get_conn()
-    if not conn:
-        return JSONResponse({"error":"DB not connected"}, status_code=500)
-    ensure_tables(conn)
-    cur = conn.cursor()
-    try:
-        role = "admin" if is_admin(email) else "user"
-        cur.execute("INSERT INTO users (email, password, name, role) VALUES (%s,%s,%s,%s) ON CONFLICT (email) DO NOTHING", (email, pw, name, role))
-        cur.close(); conn.close()
-        return {"ok": True}
-    except Exception as e:
-        cur.close(); conn.close()
-        return JSONResponse({"error": str(e)}, status_code=400)
-
-@app.post("/api/auth/login")
-async def login(req: Request):
-    data = await req.json()
-    email = clean_email(data.get("email",""))
-    pw = data.get("password","")
-    conn = get_conn()
-    if not conn:
-        return JSONResponse({"error":"DB not connected"}, status_code=500)
-    ensure_tables(conn)
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE LOWER(email)=%s", (email,))
-    row = cur.fetchone()
-    cur.close(); conn.close()
-    if not row or row["password"] != pw:
-        return JSONResponse({"error":"Wrong email or password"}, status_code=401)
-    return {"ok": True, "user": {"email": row["email"], "name": row.get("name",""), "role": row.get("role","user")}}
+    return []
 
 @app.post("/api/admin/add-product")
-async def add_product(req: Request):
-    data = await req.json()
-    admin_email = clean_email(data.get("admin_email") or req.headers.get("x-admin-email",""))
-    if not is_admin(admin_email):
-        return JSONResponse({"error":"Not authorized"}, status_code=401)
-    conn = get_conn()
-    ensure_tables(conn)
-    cur = conn.cursor()
-    cur.execute("INSERT INTO products (name, price, image, category) VALUES (%s,%s,%s,%s) RETURNING id", (data.get("name"), int(data.get("price",0)), data.get("image",""), data.get("category","")))
-    nid = cur.fetchone()["id"]
-    cur.close(); conn.close()
-    return {"success": True, "id": nid}
+def add_product(req: ProductReq, request: Request):
+    a_email = clean_email(req.admin_email or req.adminEmail or request.headers.get("x-admin-email","") or req.secret)
+    if not is_admin(a_email): return JSONResponse({"error": f"Not authorized. Login as {ADMIN_EMAILS}"}, status_code=401)
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT, price INT, image TEXT, category TEXT)")
+        cur.execute("INSERT INTO products (name,price,image,category) VALUES (%s,%s,%s,%s) RETURNING id", (req.name, req.price, req.image, req.category))
+        nid = cur.fetchone()['id']; cur.close(); conn.close()
+        return {"success": True, "id": nid}
+    except Exception as e: return {"error": str(e)}
 
-@app.post("/api/admin/delete-product")
-async def delete_product(req: Request):
-    data = await req.json()
-    pid = data.get("id")
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM products WHERE id=%s", (int(pid),))
-    cur.close(); conn.close()
-    return {"ok": True}
+@app.api_route("/api/admin/delete-product", methods=["GET","POST","DELETE"])
+def del_product(request: Request):
+    qp = request.query_params
+    pid = qp.get("product_id")
+    a_email = clean_email(qp.get("admin_email") or request.headers.get("x-admin-email",""))
+    if not pid: return JSONResponse({"error":"product_id required"}, status_code=400)
+    if not is_admin(a_email): return JSONResponse({"error":"Not authorized"}, status_code=401)
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("DELETE FROM products WHERE id=%s", (int(pid),))
+        cur.close(); conn.close()
+        return {"success": True}
+    except Exception as e: return {"error": str(e)}
 
 @app.get("/api/cart")
 def get_cart(email: str = ""):
-    email = clean_email(email)
-    conn = get_conn()
-    if not conn: return {"ok": True, "items": []}
-    ensure_tables(conn)
-    cur = conn.cursor()
-    cur.execute("SELECT p.id, p.name, p.price, p.image, c.qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=%s", (email,))
-    rows = cur.fetchall()
-    cur.close(); conn.close()
-    return {"ok": True, "items": rows}
+    try:
+        clean = clean_email(email)
+        if not clean: return {"items": [], "ok": True}
+        conn = get_conn()
+        if not conn: return {"items": [], "ok": False}
+        cur = conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {"items": rows or [], "ok": True}
+    except Exception as e:
+        return {"items": [], "error": str(e), "ok": False}
 
 @app.post("/api/cart/add")
-async def cart_add(req: Request):
-    data = await req.json()
-    email = clean_email(data.get("email",""))
-    pid = int(data.get("product_id",0))
-    conn = get_conn()
-    ensure_tables(conn)
-    cur = conn.cursor()
-    cur.execute("INSERT INTO carts (email, product_id, qty) VALUES (%s,%s,1) ON CONFLICT (email, product_id) DO UPDATE SET qty = carts.qty+1", (email, pid))
-    cur.close(); conn.close()
-    return {"ok": True}
+def add_cart(req: CartAddReq):
+    try:
+        clean = clean_email(req.email)
+        if not clean: return JSONResponse({"error":"email required"}, status_code=400)
+        conn = get_conn()
+        if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
+        cur = conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("SELECT id FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
+        if cur.fetchone():
+            cur.execute("UPDATE carts SET qty = COALESCE(qty,0)+1 WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
+        else:
+            cur.execute("INSERT INTO carts (email, product_id, qty) VALUES (%s,%s,1)", (clean, int(req.product_id)))
+        cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {"ok": True, "items": rows}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/cart/clear")
-async def cart_clear(req: Request):
-    data = await req.json()
-    email = clean_email(data.get("email",""))
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM carts WHERE LOWER(email)=%s", (email,))
-    cur.close(); conn.close()
-    return {"ok": True}
+def clear_cart_post(req: CartClearReq):
+    clean = clean_email(req.email)
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s)", (clean,))
+        cur.close(); conn.close()
+        return {"ok": True}
+    except: return {"ok": False}
 
-@app.get("/api/orders")
-def get_orders(email: str = ""):
-    email = clean_email(email)
-    conn = get_conn()
-    if not conn: return []
-    ensure_tables(conn)
-    cur = conn.cursor()
-    if is_admin(email):
-        cur.execute("SELECT * FROM orders ORDER BY id DESC")
-    else:
-        cur.execute("SELECT * FROM orders WHERE LOWER(email)=%s ORDER BY id DESC", (email,))
-    rows = cur.fetchall()
-    cur.close(); conn.close()
-    return rows
+@app.delete("/api/cart")
+def delete_one_cart_item(email: str = "", product_id: int = 0):
+    clean = clean_email(email)
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        ensure_cart_table(cur)
+        cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(product_id)))
+        cur.close(); conn.close()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @app.post("/api/orders")
-async def create_order(req: Request):
-    data = await req.json()
-    conn = get_conn()
-    ensure_tables(conn)
-    cur = conn.cursor()
-    cur.execute("INSERT INTO orders (email, items, total, address, phone, state, lga, delivery_date, delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(data.get("email","")), data.get("items",""), int(data.get("total",0)), data.get("address",""), data.get("phone",""), data.get("state",""), data.get("lga",""), data.get("delivery_date",""), data.get("delivery_time","")))
-    nid = cur.fetchone()["id"]
-    cur.execute("DELETE FROM carts WHERE LOWER(email)=%s", (clean_email(data.get("email","")),))
-    cur.close(); conn.close()
-    return {"ok": True, "order_id": nid}
+def create_order(req: OrderReq):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
+        cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+        nid = cur.fetchone()['id']; cur.close(); conn.close()
+        try:
+            conn2=get_conn(); cur2=conn2.cursor()
+            cur2.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s)", (clean_email(req.email),))
+            cur2.close(); conn2.close()
+        except: pass
+        return {"ok": True, "order_id": nid}
+    except Exception as e: return {"error": str(e)}
+
+@app.get("/api/orders")
+def get_orders(email: str = "", all: str = ""):
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
+        clean = clean_email(email)
+        if all == "true" and is_admin(email):
+            cur.execute("SELECT * FROM orders ORDER BY id DESC")
+        else:
+            cur.execute("SELECT * FROM orders WHERE LOWER(email)=LOWER(%s) ORDER BY id DESC", (clean,))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return rows
+    except Exception as e: return {"error": str(e)}
 
 @app.delete("/api/orders")
 def delete_order(id: int, email: str = ""):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM orders WHERE id=%s", (id,))
+    conn = get_conn(); cur = conn.cursor()
+    clean = clean_email(email)
+    if is_admin(email): cur.execute("DELETE FROM orders WHERE id=%s", (id,))
+    else: cur.execute("DELETE FROM orders WHERE id=%s AND LOWER(email)=LOWER(%s)", (id, clean))
     cur.close(); conn.close()
     return {"ok": True}
 
-# serve frontend index/admin if needed
-def find_file(name):
-    for p in [pathlib.Path(__file__).parent.parent / "frontend" / name, pathlib.Path(__file__).parent / "frontend" / name]:
-        if p.exists():
-            return p
-    return None
-
 @app.get("/admin")
 def admin_page():
-    f = find_file("admin.html")
-    return HTMLResponse(f.read_text()) if f else HTMLResponse("<h1>Admin</h1>")
+    if ADMIN_HTML: return FileResponse(ADMIN_HTML)
+    return HTMLResponse("<h1>Admin not found</h1>")
 
 @app.get("/")
 def root_page():
-    f = find_file("index.html")
-    return HTMLResponse(f.read_text()) if f else HTMLResponse("<h1>Success Fits Running</h1>")
+    if INDEX_HTML: return FileResponse(INDEX_HTML)
+    return HTMLResponse("<h1>Success Fits Running</h1>")
+
+@app.get("/{full_path:path}")
+def catch_all(full_path: str):
+    fp = find_frontend_file(full_path)
+    if fp: return FileResponse(fp)
+    if INDEX_HTML: return FileResponse(INDEX_HTML)
+    return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404)
