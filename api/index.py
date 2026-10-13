@@ -316,4 +316,4 @@ def catch_all(full_path: str):
     fp = find_frontend_file(full_path)
     if fp: return FileResponse(fp)
     if INDEX_HTML: return FileResponse(INDEX_HTML)
-    return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404) 
+    return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404)
