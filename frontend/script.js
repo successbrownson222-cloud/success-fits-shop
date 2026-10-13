@@ -1,6 +1,5 @@
 let PRODUCTS=[],CART=[],user=null,authMode='signup';
 const PH='https://via.placeholder.com/400x400.png?text=SUCCESS';
-// FIX: use relative API so no CORS on Vercel / WhatsApp browser
 const API_BASE = '';
 const STATES={
   "Lagos":["Ikeja","Lekki","Yaba","Surulere","Ikorodu","Ajah","Badagry","Alimosho","Oshodi"],
@@ -18,11 +17,18 @@ function init(){
     if(su){try{user=JSON.parse(su);}catch{}}
     const sc=localStorage.getItem('sf_cart_'+(user?.email?.toLowerCase()||'guest'));
     if(sc){try{CART=JSON.parse(sc);}catch{}}
-    fetch('/api/products').then(r=>r.json()).then(d=>{
-      PRODUCTS=Array.isArray(d)?d:(d.products||d.items||[]);
-      renderProducts(PRODUCTS);
-      if(user && CART.length===0) loadCartFromBackendOnce();
-    }).catch(()=>{ renderProducts([]); });
+    fetch(API_BASE+'/api/products')
+     .then(r=>r.json())
+     .then(d=>{
+        console.log('products api:', d);
+        PRODUCTS=Array.isArray(d)?d:(d.products||d.items||[]);
+        renderProducts(PRODUCTS);
+        if(user && CART.length===0) loadCartFromBackendOnce();
+      })
+     .catch(err=>{
+        console.log('products fetch error',err);
+        renderProducts([]);
+      });
     updateAll(); loadOrderCount(); initStates();
     const dt=safe('c_date');
     if(dt) dt.min=new Date().toISOString().split('T')[0];
@@ -65,7 +71,7 @@ function updateAll(){ try{
 async function loadCartFromBackendOnce(){
   if(!user?.email) return;
   try{
-    const r=await fetch('/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
+    const r=await fetch(API_BASE+'/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
     const d=await r.json();
     if(d.items?.length>0 && CART.length===0){
       d.items.forEach(it=>{
@@ -80,21 +86,21 @@ async function loadCartFromBackendOnce(){
 async function syncAddToBackend(product_id){
   if(!user?.email) return false;
   try{
-    const r=await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:Number(product_id)})});
+    const r=await fetch(API_BASE+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:Number(product_id)})});
     const d=await r.json(); return r.ok && (d.ok||d.success||d.items!==undefined);
   }catch(e){ return false; }
 }
 async function syncFullCartToBackend(){
   if(!user?.email) return;
   try{
-    await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})});
-    for(const c of CART){ for(let q=0;q<c.qty;q++){ await fetch('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:Number(c.id)})}); } }
+    await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})});
+    for(const c of CART){ for(let q=0;q<c.qty;q++){ await fetch(API_BASE+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:Number(c.id)})}); } }
   }catch(e){ console.log('full sync error',e) }
 }
 async function doAuth(){
   const name=safe('a_name')?.value.trim()||""; const email=safe('a_email')?.value.trim().toLowerCase()||""; const pass=safe('a_pass')?.value||""; const msgEl=safe('authMsg');
   if(!email||!pass) return alert('Fill email & pass'); if(msgEl) msgEl.innerText='Checking...';
-  const url='/api/auth/'+(authMode==='signup'?'signup':'login');
+  const url=API_BASE+'/api/auth/'+(authMode==='signup'?'signup':'login');
   try{
     const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,name})});
     const d=await r.json();
@@ -114,8 +120,13 @@ async function addToCart(id){ if(!user){ openAuth(); return showToast('Login fir
 function changeQty(i,d){ if(!CART[i]) return; CART[i].qty=Math.max(1,CART[i].qty+d); saveCart(); syncFullCartToBackend(); }
 function removeItem(i){ CART.splice(i,1); saveCart(); syncFullCartToBackend(); }
 function createOrderCard(o){ const card=document.createElement('div'); card.className='orderCard'; const title=document.createElement('b'); title.textContent=`#${o.id} • ₦${o.total}`; const details=document.createElement('div'); details.style.cssText='color:#888;font-size:12px'; details.innerHTML=`${o.address||''}<br>${o.state||''} ${o.lga||''} • ${o.delivery_date||''} ${o.delivery_time||''}<br>${o.phone||''}`; const btnWrap=document.createElement('div'); btnWrap.style.marginTop='8px'; const delBtn=document.createElement('button'); delBtn.textContent='Delete'; delBtn.style.cssText='background:#222;color:#f55;border:1px solid #333;padding:8px 12px;border-radius:10px'; delBtn.onclick=()=>deleteOrder(o.id); btnWrap.appendChild(delBtn); card.append(title,details,btnWrap); return card; }
-async function loadOrderCount(){ if(!user) return; try{ const r=await fetch('/api/orders?email='+encodeURIComponent(user.email)); const d=await r.json(); const el=safe('menuOrderCount'); if(Array.isArray(d)&&el) el.innerText=d.length; }catch{} }
-async function viewOrders(){ if(!user) return openAuth(); closeAll(); safe('ordersModal')?.classList.add('show'); safe('overlay')?.classList.add('show'); try{ const r=await fetch('/api/orders?email='+encodeURIComponent(user.email)); const orders=await r.json(); const list=safe('ordersList'); if(!list) return; list.innerHTML=''; if(!Array.isArray(orders)||!orders.length){ const empty=document.createElement('div'); empty.style.cssText='color:#666;text-align:center'; empty.textContent='No orders yet'; list.appendChild(empty); return; } orders.forEach(o=>list.appendChild(createOrderCard(o))); }catch(e){} }
-async function deleteOrder(id){ if(!confirm('Delete #'+id+'?')) return; const r=await fetch('/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); const d=await r.json(); if(d.ok){ showToast('Deleted'); viewOrders(); loadOrderCount(); } }
-async function doCheckout(){ if(!user) return openAuth(); const phone=safe('c_phone')?.value.trim(); const addr=safe('c_address')?.value.trim(); const state=safe('c_state')?.value; const lga=safe('c_lga')?.value; const date=safe('c_date')?.value; const time=safe('c_time')?.value; if(!phone) return alert('Enter phone'); if(!state) return alert('Select state'); if(!lga) return alert('Select LGA'); if(!addr) return alert('Enter address'); if(!date) return alert('Select date'); if(CART.length===0) return alert('Cart empty'); const total=CART.reduce((s,c)=>s+c.price*c.qty,0); const items=JSON.stringify(CART.map(c=>c.name+' x'+c.qty).join(', ')); const fullAddr=addr+', '+lga+', '+state; const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items,total,address:fullAddr,phone,state,lga,delivery_date:date,delivery_time:time})}); const d=await r.json(); if(d.ok){ showToast('Order #'+d.order_id+' placed'); CART=[]; saveCart(); await fetch('/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})}); closeAll(); loadOrderCount(); }else alert(d.error||'Failed'); }
-init();
+async function loadOrderCount(){ if(!user) return; try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); const d=await r.json(); const el=safe('menuOrderCount'); if(Array.isArray(d)&&el) el.innerText=d.length; }catch{} }
+async function viewOrders(){ if(!user) return openAuth(); closeAll(); safe('ordersModal')?.classList.add('show'); safe('overlay')?.classList.add('show'); try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); const orders=await r.json(); const list=safe('ordersList'); if(!list) return; list.innerHTML=''; if(!Array.isArray(orders)||!orders.length){ const empty=document.createElement('div'); empty.style.cssText='color:#666;text-align:center'; empty.textContent='No orders yet'; list.appendChild(empty); return; } orders.forEach(o=>list.appendChild(createOrderCard(o))); }catch(e){} }
+async function deleteOrder(id){ if(!confirm('Delete #'+id+'?')) return; const r=await fetch(API_BASE+'/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); const d=await r.json(); if(d.ok){ showToast('Deleted'); viewOrders(); loadOrderCount(); } }
+async function doCheckout(){ if(!user) return openAuth(); const phone=safe('c_phone')?.value.trim(); const addr=safe('c_address')?.value.trim(); const state=safe('c_state')?.value; const lga=safe('c_lga')?.value; const date=safe('c_date')?.value; const time=safe('c_time')?.value; if(!phone) return alert('Enter phone'); if(!state) return alert('Select state'); if(!lga) return alert('Select LGA'); if(!addr) return alert('Enter address'); if(!date) return alert('Select date'); if(CART.length===0) return alert('Cart empty'); const total=CART.reduce((s,c)=>s+c.price*c.qty,0); const items=JSON.stringify(CART.map(c=>c.name+' x'+c.qty).join(', ')); const fullAddr=addr+', '+lga+', '+state; const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items,total,address:fullAddr,phone,state,lga,delivery_date:date,delivery_time:time})}); const d=await r.json(); if(d.ok){ showToast('Order #'+d.order_id+' placed'); CART=[]; saveCart(); await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})}); closeAll(); loadOrderCount(); }else alert(d.error||'Failed'); }
+
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', init);
+}else{
+  init();
+}
