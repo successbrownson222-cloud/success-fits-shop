@@ -15,13 +15,15 @@ except:
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
-ADMIN_EMAILS = [e.strip().lower() for e in ADMIN_EMAIL.split(",") if e.strip()] if ADMIN_EMAIL else []
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "successbrown222@gmail.com").strip().lower()
+ADMIN_EMAILS = [e.strip().lower() for e in ADMIN_EMAIL.split(",") if e.strip()] if ADMIN_EMAIL else ["successbrown222@gmail.com"]
 
 def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
-    if not url: return None
-    try: 
+    if not url: 
+        print("No DATABASE_URL")
+        return None
+    try:
         conn = psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
         conn.autocommit = True
         return conn
@@ -30,11 +32,10 @@ def get_conn():
         return None
 
 def clean_email(e): return e.strip().lower() if e else ""
-
 def is_admin(email: str):
     email = clean_email(email)
     if not email: return False
-    if ADMIN_EMAILS and email in ADMIN_EMAILS: return True
+    if email in ADMIN_EMAILS: return True
     try:
         conn = get_conn()
         if not conn: return False
@@ -81,18 +82,12 @@ ADMIN_HTML = find_frontend_file("admin.html")
 INDEX_HTML = find_frontend_file("index.html")
 
 @app.get("/api/health")
-def health(): return {"ok": True, "bcrypt": HAS_BCRYPT, "site": "https://success-fits-shop.vercel.app"}
+def health(): 
+    conn = get_conn()
+    return {"ok": True, "db": bool(conn), "bcrypt": HAS_BCRYPT, "admin": ADMIN_EMAILS}
 
 def ensure_cart_table(cur):
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS carts (
-            id SERIAL PRIMARY KEY, 
-            email TEXT NOT NULL, 
-            product_id INT NOT NULL, 
-            qty INT DEFAULT 1,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-    """)
+    cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT NOT NULL, product_id INT NOT NULL, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW());")
     try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS qty INT DEFAULT 1;")
     except: pass
     try: cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();")
@@ -123,7 +118,7 @@ def signup(data: AuthReq):
     email = clean_email(data.email)
     if len(data.password) < 6: return {"error": "Password min 6 chars"}
     conn = get_conn()
-    if not conn: return {"error": "DB not connected"}
+    if not conn: return {"error": "DB not connected - check DATABASE_URL env"}
     try:
         cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, name TEXT, role TEXT DEFAULT 'user')")
@@ -165,14 +160,15 @@ def get_products():
             cur.execute("SELECT id,name,price,image,category FROM products ORDER BY id DESC")
             rows = cur.fetchall()
             cur.close(); conn.close()
-            if rows: return rows
-    except: pass
+            return rows or []
+    except Exception as e:
+        print(e)
     return []
 
 @app.post("/api/admin/add-product")
 def add_product(req: ProductReq, request: Request):
-    a_email = clean_email(req.admin_email or req.adminEmail or request.headers.get("x-admin-email",""))
-    if not is_admin(a_email): return JSONResponse({"error": f"Not authorized. Login as admin"}, status_code=401)
+    a_email = clean_email(req.admin_email or req.adminEmail or request.headers.get("x-admin-email","") or req.secret)
+    if not is_admin(a_email): return JSONResponse({"error": f"Not authorized. Login as {ADMIN_EMAILS}"}, status_code=401)
     try:
         conn = get_conn(); cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT, price INT, image TEXT, category TEXT)")
@@ -184,7 +180,8 @@ def add_product(req: ProductReq, request: Request):
 @app.api_route("/api/admin/delete-product", methods=["GET","POST","DELETE"])
 def del_product(request: Request):
     qp = request.query_params
-    pid = qp.get("product_id"); a_email = clean_email(qp.get("admin_email") or request.headers.get("x-admin-email",""))
+    pid = qp.get("product_id")
+    a_email = clean_email(qp.get("admin_email") or request.headers.get("x-admin-email",""))
     if not pid: return JSONResponse({"error":"product_id required"}, status_code=400)
     if not is_admin(a_email): return JSONResponse({"error":"Not authorized"}, status_code=401)
     try:
@@ -200,7 +197,7 @@ def get_cart(email: str = ""):
         clean = clean_email(email)
         if not clean: return {"items": [], "ok": True}
         conn = get_conn()
-        if not conn: return {"items": [], "error":"DB not connected", "ok": False}
+        if not conn: return {"items": [], "ok": False}
         cur = conn.cursor()
         ensure_cart_table(cur)
         cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
@@ -208,7 +205,6 @@ def get_cart(email: str = ""):
         cur.close(); conn.close()
         return {"items": rows or [], "ok": True}
     except Exception as e:
-        print("get_cart err", e)
         return {"items": [], "error": str(e), "ok": False}
 
 @app.post("/api/cart/add")
@@ -220,9 +216,8 @@ def add_cart(req: CartAddReq):
         if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
         cur = conn.cursor()
         ensure_cart_table(cur)
-        cur.execute("SELECT id, qty FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
-        existing = cur.fetchone()
-        if existing:
+        cur.execute("SELECT id FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
+        if cur.fetchone():
             cur.execute("UPDATE carts SET qty = COALESCE(qty,0)+1 WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
         else:
             cur.execute("INSERT INTO carts (email, product_id, qty) VALUES (%s,%s,1)", (clean, int(req.product_id)))
@@ -231,16 +226,13 @@ def add_cart(req: CartAddReq):
         cur.close(); conn.close()
         return {"ok": True, "items": rows}
     except Exception as e:
-        print("add_cart err", e)
-        return JSONResponse({"error": str(e), "ok": False}, status_code=500)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/cart/clear")
 def clear_cart_post(req: CartClearReq):
     clean = clean_email(req.email)
     try:
-        conn = get_conn()
-        if not conn: return {"ok": False}
-        cur = conn.cursor()
+        conn = get_conn(); cur = conn.cursor()
         ensure_cart_table(cur)
         cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s)", (clean,))
         cur.close(); conn.close()
@@ -251,8 +243,7 @@ def clear_cart_post(req: CartClearReq):
 def delete_one_cart_item(email: str = "", product_id: int = 0):
     clean = clean_email(email)
     try:
-        conn = get_conn()
-        cur = conn.cursor()
+        conn = get_conn(); cur = conn.cursor()
         ensure_cart_table(cur)
         cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(product_id)))
         cur.close(); conn.close()
@@ -278,9 +269,7 @@ def create_order(req: OrderReq):
 @app.get("/api/orders")
 def get_orders(email: str = "", all: str = ""):
     try:
-        conn = get_conn()
-        if not conn: return []
-        cur = conn.cursor()
+        conn = get_conn(); cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
         clean = clean_email(email)
         if all == "true" and is_admin(email):
@@ -304,7 +293,7 @@ def delete_order(id: int, email: str = ""):
 @app.get("/admin")
 def admin_page():
     if ADMIN_HTML: return FileResponse(ADMIN_HTML)
-    return HTMLResponse("<h1>Admin</h1>")
+    return HTMLResponse("<h1>Admin not found</h1>")
 
 @app.get("/")
 def root_page():
