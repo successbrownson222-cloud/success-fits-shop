@@ -28,7 +28,6 @@ ADMIN_EMAILS = [e.strip().lower() for e in ADMIN_EMAIL.split(",") if e.strip()] 
 def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
     if not url:
-        print("No DATABASE_URL set")
         return None
     try:
         if "sslmode" in url:
@@ -91,7 +90,7 @@ class OrderReq(BaseModel):
     email: str; items: str = ""; total: int = 0; address: str = ""; phone: str = ""
     state: str = ""; lga: str = ""; delivery_date: str = ""; delivery_time: str = ""
 class CartAddReq(BaseModel):
-    email: str; product_id: int
+    email: str; product_id: int; qty: int = 1; size: str = "M"; color: str = ""
 class CartClearReq(BaseModel):
     email: str
 class SimpleLogin(BaseModel):
@@ -123,9 +122,20 @@ def health():
     return {"ok": True, "db": db_ok, "bcrypt": HAS_BCRYPT, "admin": ADMIN_EMAILS}
 
 def ensure_cart_table(cur):
-    cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT NOT NULL, product_id INT NOT NULL, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW());")
-    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product ON carts(LOWER(email), product_id);")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS carts (
+            id SERIAL PRIMARY KEY, 
+            email TEXT NOT NULL, 
+            product_id INT NOT NULL, 
+            qty INT DEFAULT 1,
+            size TEXT DEFAULT 'M',
+            color TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    """)
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product ON carts(LOWER(email), product_id, size, color);")
 
+# ============ LOGIN FOR CART SYNC ============
 @app.post("/api/login")
 def simple_login(req: SimpleLogin):
     clean = clean_email(req.email)
@@ -136,7 +146,7 @@ def simple_login(req: SimpleLogin):
             return {"ok": True, "items": [], "email": clean}
         with conn.cursor() as cur:
             ensure_cart_table(cur)
-            cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
+            cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty, c.size, c.color, c.product_id FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
             rows = cur.fetchall()
         return {"ok": True, "items": rows or [], "email": clean}
     except Exception as e:
@@ -256,6 +266,7 @@ def del_product(request: Request):
         try: conn.close()
         except: pass
 
+# ============ CART SYNC - WORKS FOR BOTH WEB + APP ============
 @app.get("/api/cart")
 def get_cart(email: str = ""):
     clean = clean_email(email)
@@ -267,7 +278,7 @@ def get_cart(email: str = ""):
     try:
         with conn.cursor() as cur:
             ensure_cart_table(cur)
-            cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
+            cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty, c.size, c.color, c.product_id FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
             rows = cur.fetchall()
         return {"items": rows or [], "ok": True}
     except Exception as e:
@@ -276,30 +287,40 @@ def get_cart(email: str = ""):
         try: conn.close()
         except: pass
 
-@app.post("/api/cart/add")
-def add_cart(req: CartAddReq):
-    clean = clean_email(req.email)
-    if not clean: 
-        return JSONResponse({"error":"email required"}, status_code=400)
+def _add_cart_logic(email: str, product_id: int, qty: int = 1, size: str = "M", color: str = ""):
+    clean = clean_email(email)
     conn = get_conn()
     if not conn: 
-        return JSONResponse({"error":"DB not connected"}, status_code=500)
+        raise Exception("DB not connected")
     try:
         with conn.cursor() as cur:
             ensure_cart_table(cur)
-            cur.execute("SELECT id FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
+            cur.execute("SELECT id FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s AND size=%s AND color=%s", (clean, int(product_id), size, color))
             if cur.fetchone():
-                cur.execute("UPDATE carts SET qty = COALESCE(qty,0)+1 WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(req.product_id)))
+                cur.execute("UPDATE carts SET qty = COALESCE(qty,0)+%s WHERE LOWER(email)=LOWER(%s) AND product_id=%s AND size=%s AND color=%s", (qty, clean, int(product_id), size, color))
             else:
-                cur.execute("INSERT INTO carts (email, product_id, qty) VALUES (%s,%s,1)", (clean, int(req.product_id)))
-            cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
+                cur.execute("INSERT INTO carts (email, product_id, qty, size, color) VALUES (%s,%s,%s,%s,%s)", (clean, int(product_id), qty, size, color))
+            cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty, c.size, c.color, c.product_id FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
             rows = cur.fetchall()
         return {"ok": True, "items": rows}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         try: conn.close()
         except: pass
+
+@app.post("/api/cart/add")
+def add_cart(req: CartAddReq):
+    try:
+        return _add_cart_logic(req.email, req.product_id, req.qty, req.size, req.color)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/cart")
+def add_cart_alias(req: CartAddReq):
+    # This makes Snack Expo app work with same endpoint
+    try:
+        return _add_cart_logic(req.email, req.product_id, req.qty, req.size, req.color)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/cart/clear")
 def clear_cart_post(req: CartClearReq):
@@ -319,7 +340,7 @@ def clear_cart_post(req: CartClearReq):
         except: pass
 
 @app.delete("/api/cart")
-def delete_one_cart_item(email: str = "", product_id: int = 0):
+def delete_one_cart_item(email: str = "", product_id: int = 0, size: str = "M", color: str = ""):
     clean = clean_email(email)
     conn = get_conn()
     if not conn:
@@ -327,7 +348,11 @@ def delete_one_cart_item(email: str = "", product_id: int = 0):
     try:
         with conn.cursor() as cur:
             ensure_cart_table(cur)
-            cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(product_id)))
+            # Support both old and new delete style
+            if size and color:
+                cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s AND size=%s AND color=%s", (clean, int(product_id), size, color))
+            else:
+                cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(product_id)))
         return {"ok": True}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -343,13 +368,13 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            # FIXED LINE - 9 placeholders for 9 values
-            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
         conn2 = get_conn()
         if conn2:
             try:
                 with conn2.cursor() as cur2:
+                    ensure_cart_table(cur2)
                     cur2.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s)", (clean_email(req.email),))
             finally:
                 try: conn2.close()
