@@ -30,8 +30,6 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 .filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0}
 .filters button{padding:9px 16px;border-radius:100px;border:1px solid #222;background:#111;color:#aaa;white-space:nowrap}
 .filters button.active{background:#fff;color:#000}
-.cartRow{display:flex;gap:10px;background:#151515;border:1px solid #222;padding:10px;border-radius:14px;margin-bottom:8px}
-.qtyBtn{width:28px;height:28px;background:#222;color:#fff;border:none;border-radius:6px}
 </style>
 </head>
 <body>
@@ -43,9 +41,9 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
     <div id="menuName">Guest</div>
     <div id="menuEmail" style="color:#888;font-size:12px">Not logged in</div>
   </div>
-  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('All');closeAll()">All</div>
-  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Shoes');closeAll()">Shoes</div>
-  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Clothes');closeAll()">Clothes</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('All', null);closeAll()">All</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Shoes', null);closeAll()">Shoes</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Clothes', null);closeAll()">Clothes</div>
   <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="viewOrders();closeAll()">My Orders <span id="menuOrderCount">0</span></div>
   <div id="menuAdmin" style="display:none;padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="location.href='/admin'">Admin Dashboard</div>
   <div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a;color:#ff2d55;font-weight:700" onclick="openAuth();closeAll()">Login / Create Account</div>
@@ -61,7 +59,7 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
     <select id="c_lga"><option value="">Select LGA</option></select>
     <input id="c_address" placeholder="Street Address">
     <div style="display:flex;gap:8px"><input id="c_date" type="date" style="flex:1"><select id="c_time" style="flex:1"><option>Morning (9am-12pm)</option><option>Afternoon (12pm-4pm)</option><option>Evening (4pm-8pm)</option></select></div>
-    <div style="display:flex;justify-content:space-between;font-weight:900;margin:12px 0"><span>Total</span><span id="c_total">$0</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:900;margin:12px 0"><span>Total</span><span id="c_total">₦0</span></div>
     <button onclick="doCheckout()" style="width:100%;padding:15px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:900">Place Order</button>
   </div>
 </div>
@@ -79,10 +77,12 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 <button id="installBtn" style="width:100%;padding:14px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:900;margin:12px 0">📲 Install Mobile App</button>
 <p style="color:#333;font-size:11px;margin-top:10px">© 2026 SUCCESS FITS — Lagos NG • <span style="color:#888" onclick="location.href='/admin'">Admin</span></p>
 </footer>
-<div class="bottomNav"><button onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button><button onclick="filterCat('Shoes')">👟 Shoes</button><button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button><button onclick="viewOrders()">📦 Orders</button></div>
-<template id="productCardTpl"><div class="card"><img><div class="p-name" style="font-weight:700;margin-top:6px;font-size:14px"></div><div class="p-price" style="color:#aaa"></div><button>Add to Cart</button></div></template>
-<template id="cartRowTpl"><div class="cartRow"><img style="width:56px;height:56px;border-radius:10px"><div style="flex:1"><div class="c-name" style="font-size:13px"></div><div class="c-price" style="color:#888"></div><div style="display:flex;gap:6px;margin-top:6px"><button class="qtyBtn dec">-</button><span class="c-qty"></span><button class="qtyBtn inc">+</button></div></div><button class="qtyBtn del">✕</button></div></template>
-<template id="orderCardTpl"><div class="orderCard"><b class="o-title"></b><div class="o-details" style="color:#888;font-size:12px"></div><div style="margin-top:8px"><button class="o-del" style="background:#222;color:#f55;border:1px solid #333;padding:8px 12px;border-radius:10px">Delete</button></div></div></template>
-<script src="./script.js"></script>
+<div class="bottomNav">
+  <button onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button>
+  <button onclick="filterCat('Shoes', document.querySelector('.filters button:nth-child(2)')); window.scrollTo({top:0,behavior:'smooth'})">👟 Shoes</button>
+  <button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button>
+  <button onclick="viewOrders()">📦 Orders</button>
+</div>
+<script src="script.js"></script>
 </body>
-</html> 
+</html>
