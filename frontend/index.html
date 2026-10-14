@@ -2,18 +2,21 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Success Fits</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Success Fits - Premium drip from Lagos</title>
+<meta name="theme-color" content="#070707">
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui}
-body{background:#070707;color:#fff;padding:0 14px 170px}
-input,select{background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;padding:12px;border-radius:12px;width:100%;margin-bottom:10px}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{background:#070707;color:#fff;padding:0 14px 170px;-webkit-tap-highlight-color:transparent}
+input,select{background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;padding:12px;border-radius:12px;width:100%;margin-bottom:10px;outline:none;font-size:14px}
+input:focus,select:focus{border-color:#ff2d55}
 .header{position:sticky;top:0;z-index:50;background:#070707;display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid #1a1a1a}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-.card{background:#111;border:1px solid #1c1c1c;border-radius:20px;padding:8px}
-.card img{width:100%;height:130px;object-fit:cover;border-radius:14px}
-.card button{width:100%;margin-top:8px;padding:11px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:800}
-#menuDrawer{position:fixed;top:0;left:-100%;width:82%;max-width:320px;height:100%;background:#0f0f0f;z-index:120;padding:24px;transition:.35s}
+.card{background:#111;border:1px solid #1c1c1c;border-radius:20px;padding:8px;transition:.2s}
+.card img{width:100%;height:130px;object-fit:cover;border-radius:14px;background:#0f0f0f}
+.card button{width:100%;margin-top:8px;padding:11px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:800;cursor:pointer}
+.card button:active{transform:scale(.97)}
+#menuDrawer{position:fixed;top:0;left:-100%;width:82%;max-width:320px;height:100%;background:#0f0f0f;z-index:120;padding:24px;transition:.35s;overflow-y:auto}
 #menuDrawer.open{left:0}
 #cartDrawer{position:fixed;top:0;right:-100%;width:92%;max-width:400px;height:100%;background:#0f0f0f;padding:20px;transition:.4s;z-index:110;overflow-y:auto;display:flex;flex-direction:column}
 #cartDrawer.open{right:0}
@@ -25,64 +28,94 @@ input,select{background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;padding:12px
 .orderCard{background:#151515;border:1px solid #222;border-radius:16px;padding:14px;margin-bottom:10px}
 footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:30px -14px 0}
 .bottomNav{position:fixed;bottom:0;left:0;right:0;background:#0f0f0f;border-top:1px solid #222;display:flex;justify-content:space-around;padding:10px 0 14px;z-index:80}
-.bottomNav button{background:none;border:none;color:#666;font-size:11px;display:flex;flex-direction:column;align-items:center}
-#toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:9999}
-.filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0}
-.filters button{padding:9px 16px;border-radius:100px;border:1px solid #222;background:#111;color:#aaa;white-space:nowrap}
+.bottomNav button{background:none;border:none;color:#666;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+#toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:12px 20px;border-radius:30px;font-weight:800;display:none;z-index:9999;max-width:90%;text-align:center;font-size:13px}
+.filters{display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
+.filters::-webkit-scrollbar{display:none}
+.filters button{padding:9px 16px;border-radius:100px;border:1px solid #222;background:#111;color:#aaa;white-space:nowrap;cursor:pointer}
 .filters button.active{background:#fff;color:#000}
 </style>
 </head>
 <body>
 <div id="toast"></div>
 <div id="overlay" class="overlay" onclick="closeAll()"></div>
+
 <div id="menuDrawer">
-  <div style="display:flex;justify-content:space-between;margin-bottom:20px"><b>MENU</b><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:20px"><b>MENU</b><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px;cursor:pointer">✕</div></div>
   <div style="background:#111;border:1px solid #222;padding:14px;border-radius:14px;margin-bottom:16px">
     <div id="menuName">Guest</div>
     <div id="menuEmail" style="color:#888;font-size:12px">Not logged in</div>
   </div>
-  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('All', null);closeAll()">All</div>
-  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Shoes', null);closeAll()">Shoes</div>
-  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="filterCat('Clothes', null);closeAll()">Clothes</div>
-  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="viewOrders();closeAll()">My Orders <span id="menuOrderCount">0</span></div>
-  <div id="menuAdmin" style="display:none;padding:14px 0;border-bottom:1px solid #1a1a1a" onclick="location.href='/admin'">Admin Dashboard</div>
-  <div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a;color:#ff2d55;font-weight:700" onclick="openAuth();closeAll()">Login / Create Account</div>
-  <div id="menuLogout" style="display:none;padding:14px 0;color:#ff2d55" onclick="logout();closeAll()">Logout</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a;cursor:pointer" onclick="filterCat('All', null);closeAll()">All Products</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a;cursor:pointer" onclick="filterCat('Shoes', null);closeAll()">Shoes</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a;cursor:pointer" onclick="filterCat('Clothes', null);closeAll()">Clothes</div>
+  <div style="padding:14px 0;border-bottom:1px solid #1a1a1a;cursor:pointer" onclick="viewOrders()">My Orders <span id="menuOrderCount" style="background:#222;padding:2px 8px;border-radius:10px;margin-left:6px">0</span></div>
+  <div id="menuAdmin" style="display:none;padding:14px 0;border-bottom:1px solid #1a1a1a;cursor:pointer;color:#ff2d55" onclick="location.href='/admin'">Admin Dashboard</div>
+  <div id="menuLogin" style="padding:14px 0;border-bottom:1px solid #1a1a1a;color:#ff2d55;font-weight:700;cursor:pointer" onclick="openAuth()">Login / Create Account</div>
+  <div id="menuLogout" style="display:none;padding:14px 0;color:#ff2d55;cursor:pointer" onclick="logout()">Logout</div>
 </div>
+
 <div id="cartDrawer">
-  <h2 style="display:flex;justify-content:space-between">Cart <span id="cartCount2" style="background:#ff2d55;padding:2px 10px;border-radius:20px;font-size:14px">0</span> <span onclick="closeAll()">✕</span></h2>
+  <h2 style="display:flex;justify-content:space-between;align-items:center">Cart <span id="cartCount2" style="background:#ff2d55;padding:2px 10px;border-radius:20px;font-size:14px">0</span> <span onclick="closeAll()" style="cursor:pointer;background:#222;padding:6px 10px;border-radius:8px">✕</span></h2>
   <div id="cartList" style="margin-top:16px;flex:1"></div>
   <div style="background:#151515;padding:14px;border-radius:16px;margin-top:12px;border:1px solid #222">
     <input id="c_fullname" placeholder="Full Name">
-    <input id="c_phone" placeholder="Phone / WhatsApp">
+    <input id="c_phone" placeholder="Phone / WhatsApp" inputmode="tel">
     <select id="c_state" onchange="loadLGAs()"><option value="">Select State</option></select>
     <select id="c_lga"><option value="">Select LGA</option></select>
     <input id="c_address" placeholder="Street Address">
     <div style="display:flex;gap:8px"><input id="c_date" type="date" style="flex:1"><select id="c_time" style="flex:1"><option>Morning (9am-12pm)</option><option>Afternoon (12pm-4pm)</option><option>Evening (4pm-8pm)</option></select></div>
     <div style="display:flex;justify-content:space-between;font-weight:900;margin:12px 0"><span>Total</span><span id="c_total">₦0</span></div>
-    <button onclick="doCheckout()" style="width:100%;padding:15px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:900">Place Order</button>
+    <button onclick="doCheckout()" style="width:100%;padding:15px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:900;cursor:pointer">Place Order — Pay on Delivery</button>
   </div>
 </div>
-<div id="ordersModal"><div style="max-width:500px;margin:auto;background:#0f0f0f;padding:20px;border-radius:20px;width:100%"><div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>My Orders</h2><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px">✕</div></div><div id="ordersList"></div></div></div>
-<div id="authModal"><div class="authBox"><h2 id="authTitle">Create Account</h2><input id="a_name" placeholder="Full Name"><input id="a_email" placeholder="Email"><input id="a_pass" type="password" placeholder="Password"><button style="width:100%;padding:14px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:800;margin-top:6px" onclick="doAuth()">Continue</button><p style="text-align:center;margin-top:12px;font-size:13px"><span onclick="toggleAuth()" id="authSwitch" style="color:#ff2d55">Have account? Login</span> • <span onclick="closeAll()" style="color:#888">Close</span></p><div id="authMsg" style="font-size:12px;margin-top:10px"></div></div></div>
+
+<div id="ordersModal"><div style="max-width:500px;margin:auto;background:#0f0f0f;padding:20px;border-radius:20px;width:100%;border:1px solid #222"><div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>My Orders</h2><div onclick="closeAll()" style="background:#222;padding:6px 10px;border-radius:8px;cursor:pointer">✕</div></div><div id="ordersList"></div></div></div>
+<div id="authModal"><div class="authBox"><h2 id="authTitle">Create Account</h2><div style="margin-top:12px"><input id="a_name" placeholder="Full Name" autocomplete="name"><input id="a_email" placeholder="Email" autocomplete="email" inputmode="email"><input id="a_pass" type="password" placeholder="Password (min 6 chars)" autocomplete="current-password"><button style="width:100%;padding:14px;background:#ff2d55;color:#fff;border:none;border-radius:14px;font-weight:800;margin-top:6px;cursor:pointer" onclick="doAuth()">Continue</button><p style="text-align:center;margin-top:12px;font-size:13px"><span onclick="toggleAuth()" id="authSwitch" style="color:#ff2d55;cursor:pointer">Have account? Login</span> • <span onclick="closeAll()" style="color:#888;cursor:pointer">Close</span></p><div id="authMsg" style="font-size:12px;margin-top:10px;color:#ff9a9a;min-height:18px"></div></div></div></div>
+
 <div class="header">
-  <div style="display:flex;gap:10px;align-items:center"><div onclick="openMenu()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px">☰</div><div style="font-weight:900">SUCCESS FITS.</div></div>
-  <div style="display:flex;gap:10px;align-items:center"><div onclick="openCart()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px;position:relative">🛒<span id="count" style="position:absolute;top:-6px;right:-6px;background:#ff2d55;color:#fff;font-size:10px;min-width:18px;height:18px;border-radius:20px;display:flex;align-items:center;justify-content:center">0</span></div><div id="avatar" onclick="openMenu()" style="width:40px;height:40px;background:#fff;color:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900">S</div></div>
+  <div style="display:flex;gap:10px;align-items:center"><div onclick="openMenu()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px;cursor:pointer">☰</div><div style="font-weight:900;letter-spacing:.5px">SUCCESS FITS.</div></div>
+  <div style="display:flex;gap:10px;align-items:center"><div onclick="openCart()" style="background:#111;border:1px solid #222;padding:10px;border-radius:12px;position:relative;cursor:pointer">🛒<span id="count" style="position:absolute;top:-6px;right:-6px;background:#ff2d55;color:#fff;font-size:10px;min-width:18px;height:18px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-weight:800">0</span></div><div id="avatar" onclick="openMenu()" style="width:40px;height:40px;background:#fff;color:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900;cursor:pointer">S</div></div>
 </div>
-<div style="background:#111;border:1px solid #222;padding:14px;border-radius:16px;margin:14px 0"><div style="font-size:11px;color:#888">WELCOME</div><div style="font-weight:900" id="who">Guest — Login to shop</div><div style="font-size:11px;color:#0f0" id="status">Secure • Pay on delivery</div></div>
+
+<div style="background:#111;border:1px solid #222;padding:14px;border-radius:16px;margin:14px 0"><div style="font-size:11px;color:#888;letter-spacing:1px">WELCOME</div><div style="font-weight:900;margin-top:2px" id="who">Guest — Login to shop</div><div style="font-size:11px;color:#0f0;margin-top:2px" id="status">Secure • Pay on delivery</div></div>
+
 <div class="filters"><button class="active" onclick="filterCat('All',this)">All</button><button onclick="filterCat('Shoes',this)">Shoes</button><button onclick="filterCat('Clothes',this)">Clothes</button><button onclick="filterCat('Jewelry',this)">Jewelry</button></div>
 <div id="grid" class="grid"></div>
+
 <footer>
-<h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos. Pay on delivery.</p>
-<button id="installBtn" style="width:100%;padding:14px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:900;margin:12px 0">📲 Install Mobile App</button>
-<p style="color:#333;font-size:11px;margin-top:10px">© 2026 SUCCESS FITS — Lagos NG • <span style="color:#888" onclick="location.href='/admin'">Admin</span></p>
+<h2>SUCCESS FITS.</h2><p style="color:#666;font-size:13px;margin:8px 0">Premium drip from Lagos. Pay on delivery nationwide.</p>
+<button id="installBtn" style="width:100%;padding:14px;background:#fff;color:#000;border:none;border-radius:12px;font-weight:900;margin:12px 0;cursor:pointer">📲 Install Mobile App</button>
+<p style="color:#333;font-size:11px;margin-top:10px">© 2026 SUCCESS FITS — Lagos NG • <span style="color:#888;cursor:pointer" onclick="location.href='/admin'">Admin</span></p>
 </footer>
+
 <div class="bottomNav">
-  <button onclick="window.scrollTo({top:0,behavior:'smooth'})">🏠 Home</button>
-  <button onclick="filterCat('Shoes', document.querySelector('.filters button:nth-child(2)')); window.scrollTo({top:0,behavior:'smooth'})">👟 Shoes</button>
-  <button onclick="openCart()">🛒 Cart <b id="bottomCount">0</b></button>
-  <button onclick="viewOrders()">📦 Orders</button>
+  <button onclick="window.scrollTo({top:0,behavior:'smooth'})"><span>🏠</span>Home</button>
+  <button onclick="filterCat('Shoes', document.querySelector('.filters button:nth-child(2)')); window.scrollTo({top:0,behavior:'smooth'})"><span>👟</span>Shoes</button>
+  <button onclick="openCart()"><span>🛒</span>Cart <b id="bottomCount">0</b></button>
+  <button onclick="viewOrders()"><span>📦</span>Orders</button>
 </div>
-<script src="script.js"></script>
+
+<script src="script.js" defer></script>
+<script>
+// PWA install prompt fix
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('installBtn');
+  if(btn) btn.style.display = 'block';
+});
+document.getElementById('installBtn')?.addEventListener('click', async () => {
+  if(!deferredPrompt){
+    showToast('To install: Tap Share > Add to Home Screen');
+    return;
+  }
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  showToast(outcome === 'accepted' ? 'Installing...' : 'Install dismissed');
+  deferredPrompt = null;
+});
+</script>
 </body>
 </html>
