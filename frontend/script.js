@@ -20,11 +20,16 @@ async function init(){
 
     const r = await fetch(API_BASE+'/api/products');
     const d = await r.json();
-    console.log('products api:', d);
     PRODUCTS = Array.isArray(d)? d : (d.products || d.items || []);
 
     renderProducts(PRODUCTS);
-    if(user && CART.length===0) await loadCartFromBackendOnce();
+
+    // FIXED: Always load from backend if logged in
+    if(user?.email){
+      await loadCartFromBackend();
+      // LIVE SYNC: Poll every 5 sec for app -> web sync
+      setInterval(()=> loadCartFromBackend(true), 5000);
+    }
 
     updateAll();
     loadOrderCount();
@@ -96,46 +101,82 @@ function updateAll(){ try{
   const list=safe('cartList'); if(!list) return; list.innerHTML=''; let total=0;
   CART.forEach((p,i)=>{ total+= (Number(p.price)||0)*(p.qty||1); list.appendChild(createCartRow(p,i)); });
   const ct=safe('c_total'); if(ct) ct.innerText='₦'+total.toLocaleString();
-  if(CART.length===0){ const empty=document.createElement('div'); empty.style.cssText='text-align:center;color:#666;margin-top:40px'; empty.textContent='Cart empty'; list.appendChild(empty); }
+  if(CART.length===0){ const empty=document.createElement('div'); empty.style.cssText='text-align:center;color:#666;margin-top:40px'; empty.textContent='Cart empty - add items, they will show in mobile app too'; list.appendChild(empty); }
   const fn=safe('c_fullname'); if(fn&&user&&!fn.value) fn.value=user.name||'';
 }catch(e){console.log('updateAll',e)}}
 
-async function loadCartFromBackendOnce(){
+// FIXED: This now properly syncs from backend, merging app -> web
+async function loadCartFromBackend(silent=false){
   if(!user?.email) return;
   try{
     const r=await fetch(API_BASE+'/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
     const d=await r.json();
-    if(d.items?.length>0 && CART.length===0){
-      CART = d.items.map(it=>({...it, qty: it.qty||1}));
-      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify(CART));
-      updateAll();
+    if(d.items && Array.isArray(d.items)){
+      // Convert backend items to frontend format
+      const backendCart = d.items.map(it=>({
+        id: it.product_id || it.id,
+        product_id: it.product_id || it.id,
+        name: it.name,
+        price: it.price,
+        image: it.image,
+        category: it.category,
+        qty: it.qty||1,
+        size: it.size||'M',
+        color: it.color||''
+      }));
+
+      // If backend has items and local is different, update local
+      // This is the key for app -> web sync
+      if(JSON.stringify(backendCart)!== JSON.stringify(CART)){
+        CART = backendCart;
+        localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify(CART));
+        updateAll();
+        if(!silent && backendCart.length>0) showToast(`${backendCart.length} items synced from app ✅`);
+      }
     }
-  }catch(e){ console.log('restore error',e) }
+  }catch(e){ console.log('loadCartFromBackend error',e) }
 }
 
-async function syncAddToBackend(product_id){
+async function syncAddToBackend(product_id, qty=1){
   if(!user?.email) return false;
   try{
-    const r=await fetch(API_BASE+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:Number(product_id)})});
+    const r=await fetch(API_BASE+'/api/cart/add',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        email:user.email.toLowerCase(),
+        product_id:Number(product_id),
+        qty: Number(qty),
+        size: 'M',
+        color: ''
+      })
+    });
     const d=await r.json();
     return r.ok && (d.ok||d.items!==undefined);
-  }catch(e){ return false; }
+  }catch(e){ console.log('syncAdd error',e); return false; }
 }
 
 async function syncFullCartToBackend(){
   if(!user?.email) return;
   try{
-    // FIX: single clear, not per qty
-    await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})});
+    // Clear then re-add all with correct qty
+    await fetch(API_BASE+'/api/cart/clear',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:user.email.toLowerCase()})
+    });
     for(const c of CART){
-      // add with qty handling on backend (your backend increments, so we send once per product)
-      await fetch(API_BASE+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:Number(c.id)})});
-      // if qty > 1, update via extra calls is okay but limited - now we send only 1 extra if needed
-      if(c.qty > 1){
-        for(let q=1; q<c.qty; q++){
-          await fetch(API_BASE+'/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase(), product_id:Number(c.id)})});
-        }
-      }
+      await fetch(API_BASE+'/api/cart/add',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          email:user.email.toLowerCase(),
+          product_id:Number(c.id || c.product_id),
+          qty: Number(c.qty||1),
+          size: c.size||'M',
+          color: c.color||''
+        })
+      });
     }
   }catch(e){ console.log('full sync error',e) }
 }
@@ -158,10 +199,32 @@ async function doAuth(){
       } else {
         user=d.user;
         localStorage.setItem('sf_user',JSON.stringify(user));
-        if(CART.length===0) await loadCartFromBackendOnce();
-        else await syncFullCartToBackend();
+        // FIXED: On login, always pull cart from backend first
+        await loadCartFromBackend();
+        // If local cart has items that backend doesn't, push them
+        if(CART.length>0){
+          const backendCount = CART.length;
+          // already loaded, now if local had items before login, they are in CART
+          // Actually after loadCartFromBackend, CART is backend cart
+          // So we need to merge guest cart if any
+          const guestCart = localStorage.getItem('sf_cart_guest');
+          if(guestCart){
+            try{
+              const gItems = JSON.parse(guestCart);
+              if(gItems.length>0){
+                for(const gi of gItems){
+                  CART.push(gi);
+                }
+                await syncFullCartToBackend();
+                localStorage.removeItem('sf_cart_guest');
+              }
+            }catch{}
+          }
+        }
         closeAll(); updateAll(); loadOrderCount(); showToast('Welcome '+user.email);
         if(msgEl) msgEl.innerText='';
+        // Start live sync
+        setInterval(()=> loadCartFromBackend(true), 5000);
       }
     }else{
       if(msgEl) msgEl.innerText=d.error||'Error';
@@ -173,19 +236,39 @@ function logout(){ localStorage.removeItem('sf_user'); user=null; CART=[]; updat
 function saveCart(){ localStorage.setItem('sf_cart_'+(user?.email?.toLowerCase()||'guest'), JSON.stringify(CART)); updateAll(); }
 
 async function addToCart(id){
-  if(!user){ openAuth(); return showToast('Login first'); }
+  if(!user){ openAuth(); return showToast('Login first to sync cart to app'); }
   const p=PRODUCTS.find(x=>String(x.id)===String(id));
   if(!p){ return showToast('Product not loaded yet'); }
-  const e=CART.find(c=>String(c.id)===String(id));
+  const e=CART.find(c=>String(c.id)===String(id) || String(c.product_id)===String(id));
   if(e) e.qty++;
-  else CART.push({...p,qty:1});
+  else CART.push({...p, product_id:p.id, qty:1, size:'M', color:''});
   saveCart();
-  const ok=await syncAddToBackend(id);
-  showToast(ok?'Added to cart ✅':'Added locally');
+  showToast('Adding...');
+  const ok=await syncAddToBackend(id, 1);
+  showToast(ok?'Added ✅ - check mobile app':'Added locally - sync failed');
+  // Force reload to confirm sync
+  setTimeout(()=> loadCartFromBackend(true), 1000);
 }
 
-function changeQty(i,d){ if(!CART[i]) return; CART[i].qty=Math.max(1,(CART[i].qty||1)+d); saveCart(); syncFullCartToBackend(); }
-function removeItem(i){ CART.splice(i,1); saveCart(); syncFullCartToBackend(); }
+async function changeQty(i,d){
+  if(!CART[i]) return;
+  CART[i].qty=Math.max(1,(CART[i].qty||1)+d);
+  saveCart();
+  await syncFullCartToBackend();
+  showToast('Qty updated - synced to app');
+}
+async function removeItem(i){
+  const item = CART[i];
+  CART.splice(i,1);
+  saveCart();
+  if(item && user?.email){
+    try{
+      await fetch(`${API_BASE}/api/cart?email=${encodeURIComponent(user.email)}&product_id=${item.id||item.product_id}`, {method:'DELETE'});
+    }catch{}
+  }
+  await syncFullCartToBackend();
+  showToast('Removed - synced');
+}
 
 function createOrderCard(o){
   const card=document.createElement('div'); card.className='orderCard';
