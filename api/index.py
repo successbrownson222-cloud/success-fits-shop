@@ -14,13 +14,12 @@ except:
 
 app = FastAPI()
 
-# FIX 1: CORS - cannot use * with credentials
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=False,  # <- fixed
+    allow_credentials=False,
 )
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "successbrown222@gmail.com").strip().lower()
@@ -32,7 +31,6 @@ def get_conn():
         print("No DATABASE_URL set")
         return None
     try:
-        # avoid double sslmode
         if "sslmode" in url:
             conn = psycopg2.connect(url, cursor_factory=RealDictCursor)
         else:
@@ -345,9 +343,9 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+            # FIXED LINE - 9 placeholders for 9 values
+            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
-        # clear cart after order
         conn2 = get_conn()
         if conn2:
             try:
@@ -422,4 +420,4 @@ def catch_all(full_path: str):
         return FileResponse(fp)
     if INDEX_HTML: 
         return FileResponse(INDEX_HTML)
-    return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404) 
+    return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404)
