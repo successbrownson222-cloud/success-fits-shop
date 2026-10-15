@@ -24,10 +24,8 @@ async function init(){
 
     renderProducts(PRODUCTS);
 
-    // FIXED: Always load from backend if logged in
     if(user?.email){
-      await loadCartFromBackend();
-      // LIVE SYNC: Poll every 5 sec for app -> web sync
+      await loadCartFromBackend(false);
       setInterval(()=> loadCartFromBackend(true), 5000);
     }
 
@@ -105,14 +103,13 @@ function updateAll(){ try{
   const fn=safe('c_fullname'); if(fn&&user&&!fn.value) fn.value=user.name||'';
 }catch(e){console.log('updateAll',e)}}
 
-// FIXED: This now properly syncs from backend, merging app -> web
+// === FIXED VERSION - NO MORE 2-SECOND RESET ===
 async function loadCartFromBackend(silent=false){
   if(!user?.email) return;
   try{
     const r=await fetch(API_BASE+'/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
     const d=await r.json();
     if(d.items && Array.isArray(d.items)){
-      // Convert backend items to frontend format
       const backendCart = d.items.map(it=>({
         id: it.product_id || it.id,
         product_id: it.product_id || it.id,
@@ -125,13 +122,20 @@ async function loadCartFromBackend(silent=false){
         color: it.color||''
       }));
 
-      // If backend has items and local is different, update local
-      // This is the key for app -> web sync
-      if(JSON.stringify(backendCart)!== JSON.stringify(CART)){
+      // CRITICAL FIX: If backend is empty but local has items, DON'T wipe local
+      if(backendCart.length===0 && CART.length>0){
+        console.log('Backend empty, keeping local cart and syncing to backend');
+        // Push local to backend instead of wiping
+        if(!silent) await syncFullCartToBackend();
+        return;
+      }
+
+      // Only sync if backend has items and is different
+      if(backendCart.length>0 && JSON.stringify(backendCart)!== JSON.stringify(CART)){
         CART = backendCart;
         localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify(CART));
         updateAll();
-        if(!silent && backendCart.length>0) showToast(`${backendCart.length} items synced from app ✅`);
+        if(!silent) showToast(`${backendCart.length} items synced from app ✅`);
       }
     }
   }catch(e){ console.log('loadCartFromBackend error',e) }
@@ -159,7 +163,6 @@ async function syncAddToBackend(product_id, qty=1){
 async function syncFullCartToBackend(){
   if(!user?.email) return;
   try{
-    // Clear then re-add all with correct qty
     await fetch(API_BASE+'/api/cart/clear',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -199,31 +202,21 @@ async function doAuth(){
       } else {
         user=d.user;
         localStorage.setItem('sf_user',JSON.stringify(user));
-        // FIXED: On login, always pull cart from backend first
-        await loadCartFromBackend();
-        // If local cart has items that backend doesn't, push them
-        if(CART.length>0){
-          const backendCount = CART.length;
-          // already loaded, now if local had items before login, they are in CART
-          // Actually after loadCartFromBackend, CART is backend cart
-          // So we need to merge guest cart if any
-          const guestCart = localStorage.getItem('sf_cart_guest');
-          if(guestCart){
-            try{
-              const gItems = JSON.parse(guestCart);
-              if(gItems.length>0){
-                for(const gi of gItems){
-                  CART.push(gi);
-                }
-                await syncFullCartToBackend();
-                localStorage.removeItem('sf_cart_guest');
-              }
-            }catch{}
-          }
+        await loadCartFromBackend(false);
+        const guestCart = localStorage.getItem('sf_cart_guest');
+        if(guestCart){
+          try{
+            const gItems = JSON.parse(guestCart);
+            if(gItems.length>0){
+              CART = [...CART,...gItems];
+              await syncFullCartToBackend();
+              localStorage.removeItem('sf_cart_guest');
+              saveCart();
+            }
+          }catch{}
         }
         closeAll(); updateAll(); loadOrderCount(); showToast('Welcome '+user.email);
         if(msgEl) msgEl.innerText='';
-        // Start live sync
         setInterval(()=> loadCartFromBackend(true), 5000);
       }
     }else{
@@ -245,9 +238,12 @@ async function addToCart(id){
   saveCart();
   showToast('Adding...');
   const ok=await syncAddToBackend(id, 1);
-  showToast(ok?'Added ✅ - check mobile app':'Added locally - sync failed');
-  // Force reload to confirm sync
-  setTimeout(()=> loadCartFromBackend(true), 1000);
+  if(ok){
+    showToast('Added ✅ - check mobile app in 5 sec');
+  } else {
+    showToast('Added locally, retrying sync...');
+    setTimeout(()=> syncFullCartToBackend(), 1500);
+  }
 }
 
 async function changeQty(i,d){
@@ -255,7 +251,7 @@ async function changeQty(i,d){
   CART[i].qty=Math.max(1,(CART[i].qty||1)+d);
   saveCart();
   await syncFullCartToBackend();
-  showToast('Qty updated - synced to app');
+  showToast('Qty updated');
 }
 async function removeItem(i){
   const item = CART[i];
@@ -267,7 +263,7 @@ async function removeItem(i){
     }catch{}
   }
   await syncFullCartToBackend();
-  showToast('Removed - synced');
+  showToast('Removed');
 }
 
 function createOrderCard(o){
