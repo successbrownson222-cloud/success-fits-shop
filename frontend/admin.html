@@ -1,13 +1,24 @@
 <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Secure</title>
-<style>*{box-sizing:border-box;font-family:system-ui}body{background:#000;color:#fff;padding:15px}.box{background:#111;padding:20px;border-radius:20px;max-width:380px;margin:50px auto}input{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff}button{width:100%;padding:13px;border:none;border-radius:12px;font-weight:900;margin-top:8px;cursor:pointer}.red{background:#ff2d55;color:#fff}.white{background:#fff;color:#000}.card{background:#111;padding:12px;margin:8px 0;border-radius:12px;border:1px solid #222}.hidden{display:none}</style></head><body>
+<style>*{box-sizing:border-box;font-family:system-ui}body{background:#000;color:#fff;padding:15px}.box{background:#111;padding:20px;border-radius:20px;max-width:500px;margin:20px auto}input{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff}button{width:100%;padding:13px;border:none;border-radius:12px;font-weight:900;margin-top:8px;cursor:pointer}.red{background:#ff2d55;color:#fff}.white{background:#fff;color:#000}.gray{background:#222;color:#fff}.card{background:#151515;padding:12px;margin:10px 0;border-radius:14px;border:1px solid #222;display:flex;gap:12px}.card img{width:70px;height:70px;object-fit:cover;border-radius:10px}.hidden{display:none}.row{display:flex;gap:8px}.row button{flex:1}</style></head><body>
 <div id="loginBox" class="box"><h2>🔐 Secure Admin Login</h2><p style="color:#888;font-size:13px">Only: successbrownson222@gmail.com</p>
-<input id="email" value="successbrownson222@gmail.com"><input id="pass" type="password" placeholder="Password e.g. admine123">
+<input id="email" value="successbrownson222@gmail.com"><input id="pass" type="password" placeholder="Password">
 <button class="red" onclick="login()">Login Securely</button>
-<button class="white" onclick="signup()">First time? Create Admin Account</button>
+<button class="white" onclick="signup()">First time? Create Admin</button>
 <p id="msg" style="font-size:13px;margin-top:8px;color:#0f0;white-space:pre-wrap"></p></div>
-<div id="dash" class="box hidden" style="max-width:500px"><h3>Admin Dashboard <button onclick="logout()" style="width:auto;float:right;background:#222;color:#fff;padding:6px 12px">Out</button></h3><p id="who" style="color:#888"></p><hr style="margin:10px 0;border-color:#222"><input id="name" placeholder="Product Name"><input id="price" type="number" placeholder="Price"><input id="image" placeholder="Image URL"><input id="category" placeholder="Category"><button class="red" onclick="addProduct()">Add Product</button><p id="msg2"></p><div id="list"></div></div>
+
+<div id="dash" class="box hidden"><h3>Admin Dashboard <button onclick="logout()" style="width:auto;float:right;background:#222;color:#fff;padding:6px 12px">Out</button></h3><p id="who" style="color:#888"></p><hr style="margin:10px 0;border-color:#222">
+<input id="name" placeholder="Product Name"><input id="price" type="number" placeholder="Price e.g 25000"><input id="image" placeholder="Image URL"><input id="category" placeholder="Category e.g Men"><button class="red" onclick="addProduct()">Add Product</button><p id="msg2"></p>
+<hr style="border-color:#222;margin:15px 0">
+<h4>Edit Price / Product</h4>
+<input id="edit_id" type="number" placeholder="Product ID to edit"><input id="edit_name" placeholder="New Name (optional)"><input id="edit_price" type="number" placeholder="New Price"><input id="edit_image" placeholder="New Image URL (optional)"><input id="edit_category" placeholder="New Category (optional)">
+<div class="row"><button class="white" onclick="updateProduct()">Update Product</button><button class="gray" onclick="fillEdit()">Fill from list</button></div>
+<p id="msg3" style="color:#0f0"></p>
+<hr style="border-color:#222;margin:15px 0">
+<h4>Products (<span id="count">0</span>)</h4><div id="list"></div></div>
+
 <script>
 let ADMIN="";
+let ALL_PRODUCTS=[];
 async function api(path,body){ try{ let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); }catch(e){ return {error:e.message} } }
 async function login(){
  document.getElementById('msg').innerText='Checking...';
@@ -17,15 +28,57 @@ async function login(){
  else document.getElementById('msg').innerText='❌ '+(d.error||'Failed');
 }
 async function signup(){
- document.getElementById('msg').innerText='Creating admin account...';
+ document.getElementById('msg').innerText='Creating...';
  let email=document.getElementById('email').value.trim().toLowerCase(), pass=document.getElementById('pass').value;
  if(pass.length<6) return document.getElementById('msg').innerText='Password must be 6+ chars';
  let d=await api('/api/auth/signup',{email,password:pass,name:'Admin'});
- document.getElementById('msg').innerText= d.ok?'✅ Created! Now click Login Securely':'❌ '+(d.error||'Error');
+ document.getElementById('msg').innerText= d.ok?'✅ Created! Now Login':'❌ '+(d.error||'Error');
 }
 function logout(){ localStorage.removeItem('admin'); location.reload(); }
-async function load(){ let r=await fetch('/api/products'); let j=await r.json(); let arr=Array.isArray(j)?j:j.products||[]; document.getElementById('list').innerHTML=arr.map(p=>`<div class="card"><img src="${p.image}" style="width:100%;height:100px;object-fit:cover;border-radius:8px"><b>${p.name}</b> $${p.price}<br><button onclick="del(${p.id})" style="width:auto;background:red;color:#fff;padding:5px 12px">Delete</button></div>`).join(''); }
-async function addProduct(){ let b={name:document.getElementById('name').value,price:parseInt(document.getElementById('price').value),image:document.getElementById('image').value,category:document.getElementById('category').value,admin_email:ADMIN}; let r=await fetch('/api/admin/add-product',{method:'POST',headers:{'Content-Type':'application/json','x-admin-email':ADMIN},body:JSON.stringify(b)}); let d=await r.json(); document.getElementById('msg2').innerText=d.success?'✅ Added':'❌ '+(d.error); if(d.success) load(); }
-async function del(id){ if(!confirm('Delete '+id))return; let r=await fetch(`/api/admin/delete-product?product_id=${id}&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'}); let d=await r.json(); alert(JSON.stringify(d)); load(); }
+async function load(){ let r=await fetch('/api/products'); let j=await r.json(); let arr=Array.isArray(j)?j:j.products||[]; ALL_PRODUCTS=arr; document.getElementById('count').innerText=arr.length; document.getElementById('list').innerHTML=arr.map(p=>`<div class="card"><img src="${p.image}" onerror="this.src='https://via.placeholder.com/70'"><div style="flex:1"><b>#${p.id} ${p.name}</b><br><span style="color:#ff2d55">₦${Number(p.price).toLocaleString()}</span> <small style="color:#888">${p.category||''}</small><br><div class="row" style="margin-top:8px"><button onclick="quickEdit(${p.id})" style="padding:6px;background:#fff;color:#000;border-radius:8px;font-weight:700">Edit</button><button onclick="del(${p.id})" style="padding:6px;background:#222;color:#f55;border-radius:8px">Delete</button></div></div></div>`).join(''); }
+
+function quickEdit(id){
+  const p=ALL_PRODUCTS.find(x=>x.id==id);
+  if(!p) return;
+  document.getElementById('edit_id').value=p.id;
+  document.getElementById('edit_name').value=p.name;
+  document.getElementById('edit_price').value=p.price;
+  document.getElementById('edit_image').value=p.image;
+  document.getElementById('edit_category').value=p.category;
+  window.scrollTo(0,300);
+  document.getElementById('msg3').innerText=`Editing #${id} - change price and click Update`;
+}
+function fillEdit(){
+  const id=document.getElementById('edit_id').value;
+  if(!id) return alert('Enter ID first');
+  quickEdit(id);
+}
+
+async function addProduct(){ let b={name:document.getElementById('name').value,price:parseInt(document.getElementById('price').value),image:document.getElementById('image').value,category:document.getElementById('category').value,admin_email:ADMIN}; if(!b.name||!b.price) return alert('Name & Price needed'); let r=await fetch('/api/admin/add-product',{method:'POST',headers:{'Content-Type':'application/json','x-admin-email':ADMIN},body:JSON.stringify(b)}); let d=await r.json(); document.getElementById('msg2').innerText=d.success?'✅ Added #'+d.id:'❌ '+(d.error); if(d.success) load(); }
+async function updateProduct(){
+  const id=parseInt(document.getElementById('edit_id').value);
+  if(!id) return alert('Enter Product ID');
+  const body={
+    id:id,
+    name:document.getElementById('edit_name').value,
+    price:parseInt(document.getElementById('edit_price').value)||0,
+    image:document.getElementById('edit_image').value,
+    category:document.getElementById('edit_category').value,
+    admin_email:ADMIN
+  };
+  // Keep old values if empty
+  const old=ALL_PRODUCTS.find(x=>x.id==id);
+  if(old){
+    if(!body.name) body.name=old.name;
+    if(!body.price) body.price=old.price;
+    if(!body.image) body.image=old.image;
+    if(!body.category) body.category=old.category;
+  }
+  let r=await fetch('/api/admin/update-product',{method:'POST',headers:{'Content-Type':'application/json','x-admin-email':ADMIN},body:JSON.stringify(body)});
+  let d=await r.json();
+  document.getElementById('msg3').innerText=d.success?'✅ Updated price to ₦'+body.price:'❌ '+(d.error);
+  if(d.success) load();
+}
+async function del(id){ if(!confirm('Delete '+id+'?'))return; let r=await fetch(`/api/admin/delete-product?product_id=${id}&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'}); let d=await r.json(); alert(JSON.stringify(d)); load(); }
 let s=localStorage.getItem('admin'); if(s){ try{ let u=JSON.parse(s); ADMIN=u.email; document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=u.email; load(); }catch{} }
 </script></body></html>
