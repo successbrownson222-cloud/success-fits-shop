@@ -86,6 +86,15 @@ class AuthReq(BaseModel):
 class ProductReq(BaseModel):
     name: str; price: int; image: str = ""; category: str = "General"
     secret: str = ""; admin_email: str = ""; adminEmail: str = ""
+class ProductUpdateReq(BaseModel):
+    id: int
+    name: str = ""
+    price: int = 0
+    image: str = ""
+    category: str = ""
+    admin_email: str = ""
+    adminEmail: str = ""
+    secret: str = ""
 class OrderReq(BaseModel):
     email: str; items: str = ""; total: int = 0; address: str = ""; phone: str = ""
     state: str = ""; lga: str = ""; delivery_date: str = ""; delivery_time: str = ""
@@ -122,7 +131,6 @@ def health():
     return {"ok": True, "db": db_ok, "bcrypt": HAS_BCRYPT, "admin": ADMIN_EMAILS}
 
 def ensure_cart_table(cur):
-    # Create if not exists (old version without size/color)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS carts (
             id SERIAL PRIMARY KEY, 
@@ -132,10 +140,8 @@ def ensure_cart_table(cur):
             created_at TIMESTAMP DEFAULT NOW()
         );
     """)
-    # FIX: Add missing columns if table already existed
     cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS size TEXT DEFAULT 'M';")
     cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS color TEXT DEFAULT '';")
-    # Fix indexes
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product_simple ON carts(LOWER(email), product_id);")
     try:
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product_full ON carts(LOWER(email), product_id, size, color);")
@@ -248,6 +254,36 @@ def add_product(req: ProductReq, request: Request):
             cur.execute("INSERT INTO products (name,price,image,category) VALUES (%s,%s,%s,%s) RETURNING id", (req.name, int(req.price), req.image, req.category))
             nid = cur.fetchone()['id']
         return {"success": True, "id": nid}
+    except Exception as e: 
+        return JSONResponse({"error": str(e)}, status_code=500)
+    finally:
+        try: conn.close()
+        except: pass
+
+# === NEW ENDPOINT FOR UPDATING PRICE ===
+@app.post("/api/admin/update-product")
+def update_product(req: ProductUpdateReq, request: Request):
+    a_email = clean_email(req.admin_email or req.adminEmail or request.headers.get("x-admin-email","") or req.secret)
+    if not is_admin(a_email): 
+        return JSONResponse({"error": f"Not authorized. Login as {ADMIN_EMAILS}"}, status_code=401)
+    conn = get_conn()
+    if not conn:
+        return JSONResponse({"error": "DB not connected"}, status_code=500)
+    try:
+        with conn.cursor() as cur:
+            # Get existing product to keep old values if not provided
+            cur.execute("SELECT name, price, image, category FROM products WHERE id=%s", (int(req.id),))
+            existing = cur.fetchone()
+            if not existing:
+                return JSONResponse({"error": "Product not found"}, status_code=404)
+            
+            new_name = req.name if req.name else existing['name']
+            new_price = int(req.price) if req.price else existing['price']
+            new_image = req.image if req.image else existing['image']
+            new_category = req.category if req.category else existing['category']
+            
+            cur.execute("UPDATE products SET name=%s, price=%s, image=%s, category=%s WHERE id=%s", (new_name, new_price, new_image, new_category, int(req.id)))
+        return {"success": True, "id": req.id, "price": new_price}
     except Exception as e: 
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
@@ -381,8 +417,7 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            # FIXED: 9 placeholders for 9 values
-            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
         conn2 = get_conn()
         if conn2:
