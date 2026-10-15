@@ -260,7 +260,6 @@ def add_product(req: ProductReq, request: Request):
         try: conn.close()
         except: pass
 
-# === NEW ENDPOINT FOR UPDATING PRICE ===
 @app.post("/api/admin/update-product")
 def update_product(req: ProductUpdateReq, request: Request):
     a_email = clean_email(req.admin_email or req.adminEmail or request.headers.get("x-admin-email","") or req.secret)
@@ -271,19 +270,16 @@ def update_product(req: ProductUpdateReq, request: Request):
         return JSONResponse({"error": "DB not connected"}, status_code=500)
     try:
         with conn.cursor() as cur:
-            # Get existing product to keep old values if not provided
             cur.execute("SELECT name, price, image, category FROM products WHERE id=%s", (int(req.id),))
             existing = cur.fetchone()
             if not existing:
                 return JSONResponse({"error": "Product not found"}, status_code=404)
-            
             new_name = req.name if req.name else existing['name']
             new_price = int(req.price) if req.price else existing['price']
             new_image = req.image if req.image else existing['image']
             new_category = req.category if req.category else existing['category']
-            
             cur.execute("UPDATE products SET name=%s, price=%s, image=%s, category=%s WHERE id=%s", (new_name, new_price, new_image, new_category, int(req.id)))
-        return {"success": True, "id": req.id, "price": new_price}
+        return {"success": True, "id": req.id}
     except Exception as e: 
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
@@ -417,6 +413,7 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
+            # FIXED: 9 placeholders for 9 columns
             cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
         conn2 = get_conn()
