@@ -88,7 +88,7 @@ def ensure_cart_table(cur):
     cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT NOT NULL, product_id INT NOT NULL, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW());")
     cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS size TEXT DEFAULT 'M';")
     cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS color TEXT DEFAULT '';")
-    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product_simple ON carts(LOWER(email), product_id);")
+    cur.execute("DROP INDEX IF EXISTS idx_carts_email_product_simple;")
     try: cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product_full ON carts(LOWER(email), product_id, size, color);")
     except: pass
 
@@ -238,15 +238,16 @@ def get_cart(email: str = ""):
         try: conn.close()
         except: pass
 
+# === FIXED CART LOGIC - NOW WITH SIZE/COLOR ===
 def _add_cart_logic(email: str, product_id: int, qty: int = 1, size: str = "M", color: str = ""):
     clean = clean_email(email); conn = get_conn()
     if not conn: raise Exception("DB not connected")
     try:
         with conn.cursor() as cur:
             ensure_cart_table(cur)
-            cur.execute("SELECT id, qty FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(product_id)))
+            cur.execute("SELECT id, qty FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s AND size=%s AND color=%s", (clean, int(product_id), size, color))
             row = cur.fetchone()
-            if row: cur.execute("UPDATE carts SET qty = COALESCE(qty,0)+%s WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (qty, clean, int(product_id)))
+            if row: cur.execute("UPDATE carts SET qty = COALESCE(qty,0)+%s WHERE id=%s", (qty, row['id']))
             else: cur.execute("INSERT INTO carts (email, product_id, qty, size, color) VALUES (%s,%s,%s,%s,%s)", (clean, int(product_id), qty, size, color))
             cur.execute("SELECT p.*, COALESCE(c.qty,1) as qty, COALESCE(c.size,'M') as size, COALESCE(c.color,'') as color, c.product_id FROM carts c JOIN products p ON p.id=c.product_id WHERE LOWER(c.email)=LOWER(%s) ORDER BY c.id DESC", (clean,))
             rows = cur.fetchall()
@@ -277,12 +278,18 @@ def clear_cart_post(req: CartClearReq):
         try: conn.close()
         except: pass
 
+# === FIXED DELETE - NOW WITH SIZE/COLOR ===
 @app.delete("/api/cart")
-def delete_one_cart_item(email: str = "", product_id: int = 0):
+def delete_one_cart_item(email: str = "", product_id: int = 0, size: str = "", color: str = ""):
     clean = clean_email(email); conn = get_conn()
     if not conn: return JSONResponse({"ok": False}, status_code=500)
     try:
-        with conn.cursor() as cur: ensure_cart_table(cur); cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(product_id)))
+        with conn.cursor() as cur:
+            ensure_cart_table(cur)
+            if size or color:
+                cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s AND size=%s AND color=%s", (clean, int(product_id), size, color))
+            else:
+                cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s) AND product_id=%s", (clean, int(product_id)))
         return {"ok": True}
     except Exception as e: return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     finally:
@@ -296,8 +303,7 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            # FIXED - 9 COLUMNS = 9 %s
-            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
         conn2 = get_conn()
         if conn2:
