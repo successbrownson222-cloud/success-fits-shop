@@ -1,12 +1,21 @@
 <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Secure</title>
-<style>*{box-sizing:border-box;font-family:system-ui}body{background:#000;color:#fff;padding:15px}.box{background:#111;padding:20px;border-radius:20px;max-width:500px;margin:20px auto}input{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff}button{width:100%;padding:13px;border:none;border-radius:12px;font-weight:900;margin-top:8px;cursor:pointer}.red{background:#ff2d55;color:#fff}.white{background:#fff;color:#000}.gray{background:#222;color:#fff}.card{background:#151515;padding:12px;margin:10px 0;border-radius:14px;border:1px solid #222;display:flex;gap:12px}.card img{width:70px;height:70px;object-fit:cover;border-radius:10px}.hidden{display:none}.row{display:flex;gap:8px}.row button{flex:1}</style></head><body>
+<style>*{box-sizing:border-box;font-family:system-ui}body{background:#000;color:#fff;padding:15px}.box{background:#111;padding:20px;border-radius:20px;max-width:500px;margin:20px auto}input{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff}button{width:100%;padding:13px;border:none;border-radius:12px;font-weight:900;margin-top:8px;cursor:pointer}.red{background:#ff2d55;color:#fff}.white{background:#fff;color:#000}.gray{background:#222;color:#fff}.card{background:#151515;padding:12px;margin:10px 0;border-radius:14px;border:1px solid #222;display:flex;gap:12px}.card img{width:70px;height:70px;object-fit:cover;border-radius:10px}.hidden{display:none}.row{display:flex;gap:8px}.row button{flex:1}
+.orderCard{background:#151515;border:1px solid #222;border-radius:14px;padding:12px;margin:8px 0}
+.badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800}
+.badge-pending{background:#332200;color:#ffcc00}
+.badge-delivered{background:#003322;color:#00ff99}
+#notifBar{position:sticky;top:0;background:#ff2d55;color:#fff;padding:10px 14px;border-radius:12px;margin-bottom:10px;display:none;justify-content:space-between;align-items:center;z-index:5}
+</style></head><body>
 <div id="loginBox" class="box"><h2>🔐 Secure Admin Login</h2><p style="color:#888;font-size:13px">Only: successbrownson222@gmail.com</p>
 <input id="email" value="successbrownson222@gmail.com"><input id="pass" type="password" placeholder="Password">
 <button class="red" onclick="login()">Login Securely</button>
 <button class="white" onclick="signup()">First time? Create Admin</button>
 <p id="msg" style="font-size:13px;margin-top:8px;color:#0f0;white-space:pre-wrap"></p></div>
 
-<div id="dash" class="box hidden"><h3>Admin Dashboard <button onclick="logout()" style="width:auto;float:right;background:#222;color:#fff;padding:6px 12px">Out</button></h3><p id="who" style="color:#888"></p><hr style="margin:10px 0;border-color:#222">
+<div id="dash" class="box hidden"><h3>Admin Dashboard <button onclick="logout()" style="width:auto;float:right;background:#222;color:#fff;padding:6px 12px">Out</button></h3><p id="who" style="color:#888"></p>
+<div id="notifBar"><span id="notifText">🔔 0 new orders</span><button onclick="loadOrders()" style="width:auto;padding:4px 10px;background:#fff;color:#000">Refresh</button></div>
+
+<hr style="margin:10px 0;border-color:#222">
 <input id="name" placeholder="Product Name"><input id="price" type="number" placeholder="Price e.g 25000"><input id="image" placeholder="Image URL"><input id="category" placeholder="Category e.g Men"><button class="red" onclick="addProduct()">Add Product</button><p id="msg2"></p>
 <hr style="border-color:#222;margin:15px 0">
 <h4>Edit Price / Product</h4>
@@ -14,17 +23,26 @@
 <div class="row"><button class="white" onclick="updateProduct()">Update Product</button><button class="gray" onclick="fillEdit()">Fill from list</button></div>
 <p id="msg3" style="color:#0f0"></p>
 <hr style="border-color:#222;margin:15px 0">
-<h4>Products (<span id="count">0</span>)</h4><div id="list"></div></div>
+<h4>Products (<span id="count">0</span>)</h4><div id="list"></div>
+
+<hr style="border-color:#222;margin:20px 0">
+<h4>📦 Orders <span id="orderCount" style="background:#ff2d55;padding:2px 8px;border-radius:10px">0</span> <span id="orderStats" style="color:#888;font-size:12px"></span></h4>
+<div style="display:flex;gap:8px"><button class="white" onclick="loadOrders()" style="flex:1">Load Orders</button><button class="gray" onclick="toggleNotif()" style="flex:1">🔔 Toggle Beep</button></div>
+<div id="ordersList" style="margin-top:10px"></div>
+
+</div>
 
 <script>
 let ADMIN="";
 let ALL_PRODUCTS=[];
+let NOTIF_ON=true;
+let LAST_ORDER_ID=0;
 async function api(path,body){ try{ let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); }catch(e){ return {error:e.message} } }
 async function login(){
  document.getElementById('msg').innerText='Checking...';
  let email=document.getElementById('email').value.trim().toLowerCase(), pass=document.getElementById('pass').value;
  let d=await api('/api/auth/login',{email,password:pass});
- if(d.ok){ ADMIN=email; localStorage.setItem('admin',JSON.stringify(d.user)); document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=email+' ('+d.user.role+')'; load(); document.getElementById('msg').innerText=''; }
+ if(d.ok){ ADMIN=email; localStorage.setItem('admin',JSON.stringify(d.user)); document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=email+' ('+d.user.role+')'; load(); loadOrders(); startOrderPolling(); document.getElementById('msg').innerText=''; }
  else document.getElementById('msg').innerText='❌ '+(d.error||'Failed');
 }
 async function signup(){
@@ -66,7 +84,6 @@ async function updateProduct(){
     category:document.getElementById('edit_category').value,
     admin_email:ADMIN
   };
-  // Keep old values if empty
   const old=ALL_PRODUCTS.find(x=>x.id==id);
   if(old){
     if(!body.name) body.name=old.name;
@@ -80,5 +97,96 @@ async function updateProduct(){
   if(d.success) load();
 }
 async function del(id){ if(!confirm('Delete '+id+'?'))return; let r=await fetch(`/api/admin/delete-product?product_id=${id}&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'}); let d=await r.json(); alert(JSON.stringify(d)); load(); }
-let s=localStorage.getItem('admin'); if(s){ try{ let u=JSON.parse(s); ADMIN=u.email; document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=u.email; load(); }catch{} }
+
+// === NEW: ADMIN ORDER NOTIFICATIONS + DELIVERED STATUS ===
+async function loadOrders(){
+  if(!ADMIN) return;
+  try{
+    let r = await fetch(`/api/orders?email=${encodeURIComponent(ADMIN)}&all=true`);
+    let orders = await r.json();
+    if(!Array.isArray(orders)) return;
+    document.getElementById('orderCount').innerText = orders.length;
+    // check new order for notification
+    if(orders.length>0){
+      const maxId = Math.max(...orders.map(o=>o.id));
+      if(LAST_ORDER_ID && maxId > LAST_ORDER_ID && NOTIF_ON){
+        beepNewOrder();
+        showNotifBar(orders.filter(o=> (o.status||'pending')==='pending').length);
+      }
+      LAST_ORDER_ID = maxId;
+    }
+    // stats
+    try{
+      let sr = await fetch(`/api/orders/stats?email=${encodeURIComponent(ADMIN)}`);
+      let st = await sr.json();
+      document.getElementById('orderStats').innerText = `Pending: ${st.pending||0} | Delivered: ${st.delivered||0}`;
+      if((st.pending||0)>0) showNotifBar(st.pending);
+    }catch(e){}
+
+    document.getElementById('ordersList').innerHTML = orders.map(o=>{
+      const st = (o.status||'pending').toLowerCase();
+      const badgeClass = st==='delivered' ? 'badge-delivered' : 'badge-pending';
+      let itemsText='';
+      try{ itemsText = JSON.parse(o.items||'[]').map(i=>`${i.name||'#'+i.product_id} x${i.qty||1}`).join(', '); }catch(e){ itemsText=o.items||''; }
+      return `<div class="orderCard">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b>#${o.id} ${o.email}</b><span class="badge ${badgeClass}">${st.toUpperCase()}</span></div>
+        <div style="color:#888;font-size:12px;margin:6px 0">₦${o.total} • ${o.phone||''} • ${o.created_at||''}</div>
+        <div style="font-size:12px;color:#ccc">${itemsText}</div>
+        <div style="font-size:11px;color:#666;margin-top:4px">${o.address||''} ${o.state||''} ${o.lga||''} | ${o.delivery_date||''} ${o.delivery_time||''}</div>
+        <div class="row" style="margin-top:8px">
+          ${st!=='delivered' ? `<button onclick="markDelivered(${o.id})" style="background:#00cc66;color:#fff;border-radius:8px;padding:8px;font-weight:800">✅ Mark Delivered</button>` : `<button onclick="markPending(${o.id})" style="background:#333;color:#ffcc00;border-radius:8px;padding:8px">Undo to Pending</button>`}
+          <button onclick="delOrder(${o.id})" style="background:#222;color:#f55;border-radius:8px;padding:8px">Delete</button>
+        </div>
+      </div>`;
+    }).join('') || '<p style="color:#666">No orders</p>';
+  }catch(e){ console.log('loadOrders err', e); }
+}
+
+function showNotifBar(pending){
+  const bar=document.getElementById('notifBar');
+  const txt=document.getElementById('notifText');
+  if(pending>0){ txt.innerText=`🔔 ${pending} pending order(s)`; bar.style.display='flex'; document.title=`(${pending}) New Orders - Admin`; } else { bar.style.display='none'; document.title='Admin Secure'; }
+}
+
+function beepNewOrder(){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value=880; gain.gain.value=0.3;
+    osc.start(); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime+0.6);
+    osc.stop(ctx.currentTime+0.6);
+    if(Notification.permission==='granted'){
+      new Notification('New Order! Success Fits', {body: 'You have a new pending order'});
+    }
+  }catch(e){}
+}
+
+async function markDelivered(id){
+  if(!confirm('Mark order #'+id+' as DELIVERED?')) return;
+  let r=await fetch(`/api/orders/update-status?id=${id}&status=delivered&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'});
+  let d=await r.json();
+  if(d.ok){ loadOrders(); } else alert(d.error||'Failed');
+}
+async function markPending(id){
+  let r=await fetch(`/api/orders/update-status?id=${id}&status=pending&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'});
+  let d=await r.json(); if(d.ok) loadOrders();
+}
+async function delOrder(id){
+  if(!confirm('Delete order '+id+'?')) return;
+  let r=await fetch(`/api/orders?id=${id}&email=${encodeURIComponent(ADMIN)}`,{method:'DELETE'});
+  let d=await r.json(); loadOrders();
+}
+function toggleNotif(){
+  NOTIF_ON=!NOTIF_ON;
+  alert(NOTIF_ON?'🔔 Notifications ON':'🔕 Notifications OFF');
+  if(NOTIF_ON && Notification.permission!=='granted'){ Notification.requestPermission(); }
+}
+function startOrderPolling(){
+  setInterval(loadOrders, 10000);
+  if(Notification.permission!=='granted'){ Notification.requestPermission(); }
+}
+
+let s=localStorage.getItem('admin'); if(s){ try{ let u=JSON.parse(s); ADMIN=u.email; document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=u.email; load(); loadOrders(); startOrderPolling(); }catch{} }
 </script></body></html>
