@@ -303,7 +303,7 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
         conn2 = get_conn()
         if conn2:
@@ -347,6 +347,66 @@ def delete_order(id: int, email: str = ""):
             if is_admin(email): cur.execute("DELETE FROM orders WHERE id=%s", (id,))
             else: cur.execute("DELETE FROM orders WHERE id=%s AND LOWER(email)=LOWER(%s)", (id, clean))
         return {"ok": True}
+    finally:
+        try: conn.close()
+        except: pass
+
+# === NEW FEATURES - CART BADGE + ORDER STATUS + ADMIN NOTIFICATIONS ===
+@app.get("/api/cart/count")
+def cart_count(email: str = ""):
+    clean = clean_email(email)
+    if not clean: return {"count": 0, "ok": True}
+    conn = get_conn()
+    if not conn: return {"count": 0, "ok": False}
+    try:
+        with conn.cursor() as cur:
+            ensure_cart_table(cur)
+            cur.execute("SELECT COALESCE(SUM(qty),0) as c FROM carts WHERE LOWER(email)=LOWER(%s)", (clean,))
+            row = cur.fetchone()
+        return {"count": int(row['c'] or 0), "ok": True}
+    except Exception as e:
+        return {"count": 0, "error": str(e), "ok": False}
+    finally:
+        try: conn.close()
+        except: pass
+
+@app.post("/api/orders/update-status")
+@app.get("/api/orders/update-status")
+def update_order_status(request: Request):
+    qp = request.query_params
+    oid = qp.get("id")
+    status = qp.get("status", "delivered")
+    a_email = clean_email(qp.get("admin_email") or request.headers.get("x-admin-email","") or qp.get("email",""))
+    if not oid: return JSONResponse({"error":"id required"}, status_code=400)
+    if not is_admin(a_email): return JSONResponse({"error":"Not authorized"}, status_code=401)
+    conn = get_conn()
+    if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';")
+            cur.execute("UPDATE orders SET status=%s WHERE id=%s", (status, int(oid)))
+        return {"ok": True, "id": int(oid), "status": status}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    finally:
+        try: conn.close()
+        except: pass
+
+@app.get("/api/orders/stats")
+def order_stats(email: str = ""):
+    if not is_admin(email): return JSONResponse({"error":"Not authorized"}, status_code=401)
+    conn = get_conn()
+    if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status, COUNT(*) as c FROM orders GROUP BY status")
+            rows = cur.fetchall()
+            total_pending = sum(r['c'] for r in rows if r['status']=='pending')
+            total_delivered = sum(r['c'] for r in rows if r['status']=='delivered')
+        return {"pending": total_pending, "delivered": total_delivered, "all": rows, "ok": True}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         try: conn.close()
         except: pass
