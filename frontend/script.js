@@ -8,6 +8,26 @@ const STATES={
   "Rivers":["Port Harcourt","Obio-Akpor","Eleme"],
   "Others":["Other"]
 };
+
+// === NEW: ALL CATEGORIES - SAME LIST AS BACKEND ===
+const CATEGORIES = [
+  {id:"all", name:"All", icon:"🛍️"},
+  {id:"men_clothing", name:"Men Clothing", icon:"👕"},
+  {id:"women_clothing", name:"Women Clothing", icon:"👗"},
+  {id:"men_shoes", name:"Men Shoes", icon:"👞"},
+  {id:"women_shoes", name:"Women Shoes", icon:"👠"},
+  {id:"children_clothing", name:"Children Clothing", icon:"🧒"},
+  {id:"children_shoes", name:"Children Shoes", icon:"👟"},
+  {id:"gadgets", name:"Gadgets", icon:"📱"},
+  {id:"television", name:"Television", icon:"📺"},
+  {id:"fridges", name:"Fridges", icon:"❄️"},
+  {id:"air_conditioner", name:"Air Conditioner", icon:"💨"},
+  {id:"kitchen_utensils", name:"Kitchen Utensils", icon:"🍳"},
+  {id:"furniture", name:"Furniture", icon:"🛋️"},
+  {id:"cars", name:"Cars", icon:"🚗"},
+  {id:"home_appliances", name:"Home Appliances", icon:"🏠"},
+];
+
 let IS_CHECKING_OUT=false;
 
 function safe(id){ return document.getElementById(id) }
@@ -23,6 +43,7 @@ async function init(){
     const d = await r.json();
     PRODUCTS = Array.isArray(d)? d : (d.products || d.items || []);
 
+    renderCategories();
     renderProducts(PRODUCTS);
 
     if(user?.email){
@@ -41,6 +62,19 @@ async function init(){
   }
 }
 
+function renderCategories(){
+  const container = safe('catFilters') || document.querySelector('.filters');
+  if(!container) return;
+  container.innerHTML = '';
+  CATEGORIES.forEach(cat=>{
+    const btn = document.createElement('button');
+    btn.textContent = `${cat.icon} ${cat.name}`;
+    if(cat.id==='all') btn.classList.add('active');
+    btn.onclick = (e)=> filterCat(cat.id, e.target);
+    container.appendChild(btn);
+  });
+}
+
 function initStates(){ const s=safe('c_state'); if(!s) return; s.innerHTML='<option value="">Select State</option>'; Object.keys(STATES).forEach(st=>{ const o=document.createElement('option'); o.value=st; o.textContent=st; s.appendChild(o); }); }
 function loadLGAs(){ const stEl=safe('c_state'); const lga=safe('c_lga'); if(!stEl||!lga) return; const st=stEl.value; lga.innerHTML='<option value="">Select LGA</option>'; (STATES[st]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=l; o.textContent=l; lga.appendChild(o); }); }
 function showToast(m){ const t=safe('toast'); if(!t) return console.log(m); t.innerText=m; t.style.display='block'; setTimeout(()=>t.style.display='none',2500); }
@@ -50,20 +84,50 @@ function renderProducts(list){
   if(!list.length){
     const e=document.createElement('div');
     e.style.cssText='grid-column:1/3;text-align:center;color:#666;padding:30px';
-    e.textContent='No products — go to /admin to add';
+    e.textContent='No products in this category — go to /admin to add';
     g.appendChild(e); return;
   }
   list.forEach(p=>{
     const card=document.createElement('div'); card.className='card';
     const img=document.createElement('img'); img.src=p.image||PH; img.loading='lazy'; img.onerror=function(){this.src=PH};
     const name=document.createElement('div'); name.style.cssText='font-weight:700;margin-top:6px;font-size:14px'; name.textContent=p.name;
+    const cat=document.createElement('div'); cat.style.cssText='font-size:11px;color:#666;margin:2px 0'; cat.textContent=(p.category||'').replace(/_/g,' ').toUpperCase();
     const price=document.createElement('div'); price.style.color='#aaa'; price.textContent='₦'+Number(p.price).toLocaleString();
     const btn=document.createElement('button'); btn.textContent='Add to Cart'; btn.className='btn'; btn.onclick=()=>addToCart(p.id);
-    card.append(img,name,price,btn); g.appendChild(card);
+    card.append(img,name,cat,price,btn); g.appendChild(card);
   });
 }
 
-function filterCat(c,b){ if(b){ document.querySelectorAll('.filters button,.cat button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); } renderProducts(c==='All'?PRODUCTS:PRODUCTS.filter(x=>(x.category||'').toLowerCase().includes(c.toLowerCase()))); }
+async function filterCat(c,b){
+  if(b){
+    document.querySelectorAll('.filters button, #catFilters button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  }
+  if(c==='All' || c==='all'){
+    renderProducts(PRODUCTS);
+    return;
+  }
+  // Try client filter first
+  const filtered = PRODUCTS.filter(x=>{
+    const cat = (x.category||'').toLowerCase();
+    return cat === c.toLowerCase() || cat.includes(c.toLowerCase());
+  });
+  if(filtered.length>0){
+    renderProducts(filtered);
+  } else {
+    // If not found locally, fetch from API (one endpoint powers all)
+    try{
+      showToast('Loading '+c.replace(/_/g,' ')+'...');
+      const r = await fetch(`${API_BASE}/api/products?category=${encodeURIComponent(c)}`);
+      const d = await r.json();
+      const list = Array.isArray(d)? d : (d.products||[]);
+      renderProducts(list);
+    }catch(e){
+      renderProducts([]);
+    }
+  }
+}
+
 function openMenu(){ safe('menuDrawer')?.classList.add('open'); safe('overlay')?.classList.add('show'); }
 function openCart(){ safe('cartDrawer')?.classList.add('open'); safe('overlay')?.classList.add('show'); }
 function closeAll(){ ['menuDrawer','cartDrawer','authModal','ordersModal'].forEach(id=>{ safe(id)?.classList.remove('open','show'); }); safe('overlay')?.classList.remove('show'); }
@@ -97,7 +161,6 @@ function updateAll(){ try{
   const ma=safe('menuAdmin'); if(ma) ma.style.display=(user&&user.role==='admin')?'block':'none';
   const qty=CART.reduce((s,c)=>s+(c.qty||0),0);
   ['count','cartCount2','cartCount','bottomCount','menuOrderCount'].forEach(id=>{ const el=safe(id); if(el && id==='menuOrderCount'){ } else if(el) el.innerText=qty; });
-  // Keep cart badges separate from order count badge
   ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText=qty; });
   const list=safe('cartList'); if(!list) return; list.innerHTML=''; let total=0;
   CART.forEach((p,i)=>{ total+= (Number(p.price)||0)*(p.qty||1); list.appendChild(createCartRow(p,i)); });
@@ -125,9 +188,7 @@ async function loadCartFromBackend(silent=false){
         color: it.color||''
       }));
 
-      // FIXED: If cart is intentionally empty (after checkout), NEVER restore it
       if(CART.length===0){
-        // Keep empty, don't push old guest cart
         localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
         localStorage.setItem('sf_cart_guest', JSON.stringify([]));
         updateAll();
@@ -135,7 +196,6 @@ async function loadCartFromBackend(silent=false){
       }
 
       if(backendCart.length===0 && CART.length>0 && !silent){
-        console.log('Backend empty but local has items, will sync local to backend (not after checkout)');
         return;
       }
 
@@ -317,19 +377,16 @@ async function doCheckout(){
     const d=await r.json();
     if(d.ok){
       showToast('Order #'+d.order_id+' placed');
-      // FORCE CLEAR EVERYWHERE
       CART=[];
       localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
       localStorage.setItem('sf_cart_guest', JSON.stringify([]));
       updateAll();
-      // clear backend cart
       try{ await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})}); }catch{}
-      // clear UI badges manually
       ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText='0'; });
       const list=safe('cartList');
       if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:20px">✅ Order placed! Cart cleared</div>';
       const ct=safe('c_total'); if(ct) ct.innerText='₦0';
-      closeAll(); loadOrderCount();
+            closeAll(); loadOrderCount();
     }else alert(d.error||'Failed');
   }catch(e){ alert('Checkout error: '+e.message) }
   finally{
