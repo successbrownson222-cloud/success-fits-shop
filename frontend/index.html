@@ -34,9 +34,6 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 .filters::-webkit-scrollbar{display:none}
 .filters button{padding:9px 16px;border-radius:100px;border:1px solid #222;background:#111;color:#aaa;white-space:nowrap;cursor:pointer}
 .filters button.active{background:#fff;color:#000}
-.badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800}
-.badge-pending{background:#332200;color:#ffcc00;border:1px solid #665500}
-.badge-delivered{background:#003322;color:#00ff99;border:1px solid #00aa66}
 </style>
 </head>
 <body>
@@ -101,7 +98,7 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
 
 <script src="script.js" defer></script>
 <script>
-// PWA install prompt fix
+// PWA install only - no cart logic here
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -119,61 +116,6 @@ document.getElementById('installBtn')?.addEventListener('click', async () => {
   showToast(outcome === 'accepted' ? 'Installing...' : 'Install dismissed');
   deferredPrompt = null;
 });
-</script>
-
-<!-- === NEW: CART BADGE + ORDER STATUS (added, not replacing old code) === -->
-<script>
-async function syncCartBadge(){
-  try{
-    const u = JSON.parse(localStorage.getItem('user')||'{}');
-    const email = (u.email||localStorage.getItem('email')||'').trim();
-    if(!email) return;
-    const r = await fetch(`/api/cart/count?email=${encodeURIComponent(email)}`);
-    const d = await r.json();
-    const c = d.count||0;
-    ['count','bottomCount','cartCount2','menuOrderCount'].forEach(id=>{
-      const el=document.getElementById(id);
-      if(el) el.textContent = c;
-    });
-  }catch(e){}
-}
-// sync every 3 sec + on load
-setInterval(syncCartBadge, 3000);
-window.addEventListener('load', ()=> setTimeout(syncCartBadge, 800));
-
-// Override viewOrders to show delivered/pending status
-const _origViewOrders = window.viewOrders;
-window.viewOrders = async function(){
-  if(_origViewOrders) {
-    try { await _origViewOrders(); } catch(e){}
-  }
-  // enhance orders list with status badges
-  try{
-    const u = JSON.parse(localStorage.getItem('user')||'{}');
-    const email = (u.email||localStorage.getItem('email')||'').trim();
-    if(!email) return;
-    const r = await fetch(`/api/orders?email=${encodeURIComponent(email)}`);
-    const orders = await r.json();
-    const list = document.getElementById('ordersList');
-    if(!list || !Array.isArray(orders)) return;
-    list.innerHTML = orders.map(o=>{
-      const st = (o.status||'pending').toLowerCase();
-      const badgeClass = st==='delivered' ? 'badge-delivered' : 'badge-pending';
-      let items = '';
-      try{ items = JSON.parse(o.items||'[]').map(i=>`${i.name||i.product_id} x${i.qty||1}`).join(', '); } catch(e){ items=o.items||''; }
-      return `<div class="orderCard">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <b>Order #${o.id}</b> <span class="badge ${badgeClass}">${st.toUpperCase()}</span>
-        </div>
-        <div style="color:#888;font-size:12px;margin:6px 0">₦${o.total} • ${o.created_at||''}</div>
-        <div style="font-size:13px;color:#ccc">${items}</div>
-        <div style="font-size:11px;color:#666;margin-top:6px">${o.address||''} ${o.state||''}</div>
-      </div>`;
-    }).join('') || '<p style="color:#666">No orders yet</p>';
-    const mo = document.getElementById('menuOrderCount');
-    if(mo) mo.textContent = orders.length;
-  }catch(e){ console.log('orders enhance err', e); }
-}
 </script>
 
 </body>
