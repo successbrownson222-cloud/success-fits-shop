@@ -9,7 +9,30 @@ const STATES={
   "Others":["Other"]
 };
 
-// BEST PRACTICE: single source from backend
+// === VARIANT CHOICES PER CATEGORY ===
+const VARIANT_CONFIG = {
+  men_shoes: { label: "Shoe Size", options: ["40","41","42","43","44","45","46"] },
+  women_shoes: { label: "Shoe Size", options: ["36","37","38","39","40","41","42"] },
+  children_shoes: { label: "Kids Shoe Size", options: ["26","27","28","29","30","31","32","33","34","35"] },
+  men_clothing: { label: "Size", options: ["S","M","L","XL","XXL","XXXL"] },
+  women_clothing: { label: "Size", options: ["S","M","L","XL","XXL","6","8","10","12","14"] },
+  children_clothing: { label: "Age", options: ["1-2yrs","2-3yrs","3-4yrs","4-5yrs","6-8yrs","9-12yrs"] },
+  television: { label: "Inches", options: ['32"','43"','50"','55"','65"','75"'] },
+  fridges: { label: "Capacity", options: ["100L","200L","300L","400L+","Double Door"] },
+  air_conditioner: { label: "Power", options: ["1HP","1.5HP","2HP","2.5HP"] },
+  gadgets: { label: "Storage", options: ["64GB","128GB","256GB","512GB"] },
+  kitchen_utensils: { label: "Set", options: ["Small","Medium","Large","Full Set"] },
+  furniture: { label: "Color", options: ["Black","Brown","White","Grey","Cream"] },
+  cars: { label: "Condition", options: ["Brand New","Tokunbo","Used"] },
+  home_appliances: { label: "Type", options: ["Single","Double","Automatic"] },
+  default: { label: "Size", options: ["S","M","L","XL"] }
+};
+function getVariantForCategory(cat){
+  if(!cat) return VARIANT_CONFIG.default;
+  const key = cat.toLowerCase().replace(/ /g,'_');
+  return VARIANT_CONFIG[key] || VARIANT_CONFIG.default;
+}
+
 let CATEGORIES = [];
 let CATEGORY_COUNTS = {};
 let IS_CHECKING_OUT=false;
@@ -22,21 +45,16 @@ async function init(){
     if(su){ try{ user=JSON.parse(su); }catch{} }
     const sc=localStorage.getItem('sf_cart_'+(user?.email?.toLowerCase()||'guest'));
     if(sc){ try{ CART=JSON.parse(sc)||[]; }catch{} }
-
     await renderCategories();
-
     const r = await fetch(API_BASE+'/api/products');
     const d = await r.json();
     PRODUCTS = Array.isArray(d)? d : (d.products || d.items || []);
-
     renderProducts(PRODUCTS);
-    await updateCategoryCounts(); // show counts after products loaded
-
+    await updateCategoryCounts();
     if(user?.email){
       await loadCartFromBackend(false);
       setInterval(()=> { if(!IS_CHECKING_OUT) loadCartFromBackend(true) }, 5000);
     }
-
     updateAll();
     loadOrderCount();
     initStates();
@@ -48,7 +66,6 @@ async function init(){
   }
 }
 
-// === NEW: FETCH CATEGORIES + SHOW STOCK COUNT ===
 async function renderCategories(){
   const container = safe('catFilters');
   if(!container) return;
@@ -63,21 +80,17 @@ async function renderCategories(){
       {id:"gadgets", name:"Gadgets", icon:"📱"}
     ];
   }
-  // try get counts (if backend has endpoint)
   try{
     const rc = await fetch(API_BASE+'/api/categories/counts');
     if(rc.ok){ CATEGORY_COUNTS = await rc.json(); }
   }catch{}
-
   container.innerHTML = '';
   CATEGORIES.forEach(cat=>{
     const count = CATEGORY_COUNTS[cat.id] ?? 0;
     const btn = document.createElement('button');
-    // Show: Icon Name (count)
     btn.innerHTML = `${cat.icon||''} ${cat.name} <span style="background:#1e1e1e;border:1px solid #2a2a2a;padding:2px 8px;border-radius:20px;margin-left:6px;font-size:11px;color:#ff2d55">${count}</span>`;
     if(cat.id==='all'){
       btn.classList.add('active');
-      // All count = total products
       if(!CATEGORY_COUNTS['all']) btn.innerHTML = `${cat.icon||''} ${cat.name} <span style="background:#1e1e1e;border:1px solid #2a2a2a;padding:2px 8px;border-radius:20px;margin-left:6px;font-size:11px;color:#ff2d55">${PRODUCTS.length || count}</span>`;
     }
     btn.onclick = (ev)=> filterCat(cat.id, ev.currentTarget);
@@ -86,7 +99,6 @@ async function renderCategories(){
 }
 
 async function updateCategoryCounts(){
-  // local count fallback if backend /counts fails
   if(Object.keys(CATEGORY_COUNTS).length===0){
     CATEGORY_COUNTS = {all: PRODUCTS.length};
     PRODUCTS.forEach(p=>{
@@ -94,7 +106,6 @@ async function updateCategoryCounts(){
       CATEGORY_COUNTS[c] = (CATEGORY_COUNTS[c]||0)+1;
     });
   }
-  // re-render with counts
   const container = safe('catFilters');
   if(!container) return;
   container.querySelectorAll('button').forEach((btn, idx)=>{
@@ -120,14 +131,35 @@ function renderProducts(list){
     g.appendChild(e); return;
   }
   list.forEach(p=>{
+    const variant = getVariantForCategory(p.category);
     const card=document.createElement('div'); card.className='card';
     const img=document.createElement('img'); img.src=p.image||PH; img.loading='lazy'; img.onerror=function(){this.src=PH};
     const name=document.createElement('div'); name.style.cssText='font-weight:700;margin-top:6px;font-size:14px'; name.textContent=p.name;
     const cat=document.createElement('div'); cat.style.cssText='font-size:11px;color:#666;margin:2px 0'; cat.textContent=(p.category||'').replace(/_/g,' ').toUpperCase();
     const price=document.createElement('div'); price.style.color='#aaa'; price.textContent='₦'+Number(p.price).toLocaleString();
     const stock=document.createElement('div'); stock.style.cssText='font-size:11px;color:#0f0;margin:2px 0'; stock.textContent='In Stock';
-    const btn=document.createElement('button'); btn.textContent='Add to Cart'; btn.className='btn'; btn.onclick=()=>addToCart(p.id);
-    card.append(img,name,cat,price,stock,btn); g.appendChild(card);
+
+    const selWrap=document.createElement('div'); selWrap.style.cssText='margin:8px 0;display:flex;flex-wrap:wrap;gap:4px';
+    const selLabel=document.createElement('div'); selLabel.style.cssText='font-size:11px;color:#ff2d55;width:100%'; selLabel.textContent=variant.label+':';
+    selWrap.appendChild(selLabel);
+    let selectedVal = variant.options[0];
+    variant.options.forEach(opt=>{
+      const b=document.createElement('button');
+      b.textContent=opt;
+      b.style.cssText='padding:4px 8px;border:1px solid #333;background:#151515;color:#fff;border-radius:6px;font-size:11px;cursor:pointer';
+      if(opt===selectedVal){ b.style.background='#ff2d55'; b.style.borderColor='#ff2d55'; }
+      b.onclick=()=>{
+        selWrap.querySelectorAll('button').forEach(x=>{ x.style.background='#151515'; x.style.borderColor='#333'; });
+        b.style.background='#ff2d55'; b.style.borderColor='#ff2d55';
+        selectedVal=opt;
+      };
+      selWrap.appendChild(b);
+    });
+
+    const btn=document.createElement('button'); btn.textContent='Add to Cart'; btn.className='btn'; 
+    btn.onclick=()=>addToCart(p.id, selectedVal, variant.label);
+    
+    card.append(img,name,cat,price,stock,selWrap,btn); g.appendChild(card);
   });
 }
 
@@ -169,8 +201,8 @@ function createCartRow(p,i){
   const row=document.createElement('div'); row.style.cssText='display:flex;gap:10px;background:#151515;border:1px solid #222;padding:10px;border-radius:14px;margin-bottom:8px';
   const img=document.createElement('img'); img.src=p.image||PH; img.style.cssText='width:56px;height:56px;border-radius:10px;object-fit:cover';
   const info=document.createElement('div'); info.style.flex='1';
-  const name=document.createElement('div'); name.style.fontSize='13px'; name.textContent=p.name;
-  const price=document.createElement('div'); price.style.color='#888'; price.textContent=`₦${p.price} x ${p.qty}`;
+  const name=document.createElement('div'); name.style.fontSize='13px'; name.textContent=p.name + (p.selectedSize?` (${p.selectedSize})`:'');
+  const price=document.createElement('div'); price.style.color='#888'; price.textContent=`₦${p.price} x ${p.qty} ${p.sizeLabel||''}:${p.selectedSize||p.size||''}`;
   const qtyBox=document.createElement('div'); qtyBox.style.cssText='display:flex;gap:6px;margin-top:6px;align-items:center';
   const dec=document.createElement('button'); dec.textContent='-'; dec.style.cssText='width:28px;height:28px;background:#222;color:#fff;border:none;border-radius:6px;cursor:pointer'; dec.onclick=()=>changeQty(i,-1);
   const qty=document.createElement('span'); qty.textContent=p.qty;
@@ -215,7 +247,9 @@ async function loadCartFromBackend(silent=false){
         category: it.category,
         qty: it.qty||1,
         size: it.size||'M',
-        color: it.color||''
+        selectedSize: it.size||'M',
+        color: it.color||'',
+        sizeLabel: getVariantForCategory(it.category).label
       }));
       if(CART.length===0){
         localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
@@ -234,13 +268,13 @@ async function loadCartFromBackend(silent=false){
   }catch(e){ console.log('loadCartFromBackend error',e) }
 }
 
-async function syncAddToBackend(product_id, qty=1){
+async function syncAddToBackend(product_id, qty=1, size='M'){
   if(!user?.email) return false;
   try{
     const r=await fetch(API_BASE+'/api/cart/add',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ email:user.email.toLowerCase(), product_id:Number(product_id), qty:Number(qty), size:'M', color:'' })
+      body:JSON.stringify({ email:user.email.toLowerCase(), product_id:Number(product_id), qty:Number(qty), size:size, color:'' })
     });
     const d=await r.json();
     return r.ok && (d.ok||d.items!==undefined);
@@ -256,7 +290,7 @@ async function syncFullCartToBackend(){
       await fetch(API_BASE+'/api/cart/add',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ email:user.email.toLowerCase(), product_id:Number(c.id||c.product_id), qty:Number(c.qty||1), size:c.size||'M', color:c.color||'' })
+        body:JSON.stringify({ email:user.email.toLowerCase(), product_id:Number(c.id||c.product_id), qty:Number(c.qty||1), size:c.size||c.selectedSize||'M', color:c.color||'' })
       });
     }
   }catch(e){ console.log('full sync error',e) }
@@ -306,17 +340,17 @@ async function doAuth(){
 function logout(){ localStorage.removeItem('sf_user'); user=null; CART=[]; updateAll(); closeAll(); showToast('Logged out'); setTimeout(()=>openAuth(),500); }
 function saveCart(){ localStorage.setItem('sf_cart_'+(user?.email?.toLowerCase()||'guest'), JSON.stringify(CART)); updateAll(); }
 
-async function addToCart(id){
+async function addToCart(id, selectedSize='M', sizeLabel='Size'){
   if(!user){ openAuth(); return showToast('Login first to sync cart to app'); }
   const p=PRODUCTS.find(x=>String(x.id)===String(id));
   if(!p){ return showToast('Product not loaded yet'); }
-  const e=CART.find(c=>String(c.id)===String(id) || String(c.product_id)===String(id));
+  const e=CART.find(c=> (String(c.id)===String(id) || String(c.product_id)===String(id)) && (c.selectedSize===selectedSize || c.size===selectedSize));
   if(e) e.qty++;
-  else CART.push({...p, product_id:p.id, qty:1, size:'M', color:''});
+  else CART.push({...p, product_id:p.id, qty:1, size:selectedSize, selectedSize:selectedSize, sizeLabel:sizeLabel, color:''});
   saveCart();
-  showToast('Adding...');
-  const ok=await syncAddToBackend(id, 1);
-  if(ok){ showToast('Added ✅ - check mobile app in 5 sec'); }
+  showToast(`${sizeLabel}: ${selectedSize} - Adding...`);
+  const ok=await syncAddToBackend(id, 1, selectedSize);
+  if(ok){ showToast(`Added ${selectedSize} ✅ - check app`); }
   else { showToast('Added locally, retrying sync...'); setTimeout(()=> syncFullCartToBackend(), 1500); }
 }
 
@@ -352,8 +386,43 @@ function createOrderCard(o){
 }
 
 async function loadOrderCount(){ if(!user) return; try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); const d=await r.json(); const el=safe('menuOrderCount'); if(Array.isArray(d)&&el) el.innerText=d.length; }catch{} }
-async function viewOrders(){ if(!user) return openAuth(); closeAll(); safe('ordersModal')?.classList.add('show'); safe('overlay')?.classList.add('show'); try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); const orders=await r.json(); const list=safe('ordersList'); if(!list) return; list.innerHTML=''; if(!Array.isArray(orders)||!orders.length){ const empty=document.createElement('div'); empty.style.cssText='color:#666;text-align:center'; empty.textContent='No orders yet'; list.appendChild(empty); return; } orders.forEach(o=>list.appendChild(createOrderCard(o))); }catch(e){} }
-async function deleteOrder(id){ if(!confirm('Delete #'+id+'?')) return; try{ const r=await fetch(API_BASE+'/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); const d=await r.json(); if(d.ok){ showToast('Deleted'); viewOrders(); loadOrderCount(); } else showToast('Delete failed'); }catch{ showToast('Delete error'); } }
+
+async function viewOrders(){ 
+  if(!user) return openAuth(); 
+  closeAll(); 
+  safe('ordersModal')?.classList.add('show'); 
+  safe('overlay')?.classList.add('show'); 
+  try{ 
+    const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); 
+    const orders=await r.json(); 
+    const list=safe('ordersList'); 
+    if(!list) return; 
+    list.innerHTML=''; 
+    if(!Array.isArray(orders)||!orders.length){ 
+      const empty=document.createElement('div'); 
+      empty.style.cssText='color:#666;text-align:center'; 
+      empty.textContent='No orders yet'; 
+      list.appendChild(empty); 
+      return; 
+    } 
+    orders.forEach(o=>list.appendChild(createOrderCard(o))); 
+  }catch(e){} 
+}
+
+async function deleteOrder(id){ 
+  if(!confirm('Delete #'+id+'?')) return; 
+  try{ 
+    const r=await fetch(API_BASE+'/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); 
+    const d=await r.json(); 
+    if(d.ok){ 
+      showToast('Deleted'); 
+      viewOrders(); 
+      loadOrderCount(); 
+    } else showToast('Delete failed'); 
+  }catch{ 
+    showToast('Delete error'); 
+  } 
+}
 
 async function doCheckout(){
   if(!user) return openAuth();
@@ -370,10 +439,25 @@ async function doCheckout(){
   if(!date) return alert('Select date');
   if(CART.length===0) return alert('Cart empty');
   const total=CART.reduce((s,c)=>s+(Number(c.price)||0)*(c.qty||1),0);
-  const itemsText=CART.map(c=>`${c.name} x${c.qty}`).join(', ');
+  const itemsText=CART.map(c=>`${c.name} (${c.selectedSize||c.size||'M'}) x${c.qty}`).join(', ');
   const fullAddr=`${addr}, ${lga}, ${state}`;
   IS_CHECKING_OUT=true;
   try{
+    const r=await fetch(API_BASE+'/api/orders',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        email:user.email,
+        items:itemsText,
+        total:total,
+        address:fullAddr,
+        phone:phone,
+        state:state,
+        lga:lga,
+        delivery_date:date,
+        delivery_time:time||''
+      })
+    });
     const d=await r.json();
     if(d.ok){
       showToast('Order #'+d.order_id+' placed');
@@ -403,10 +487,4 @@ async function doCheckout(){
   finally{
     setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000);
   }
-}
-
-if(document.readyState==='loading'){
-  document.addEventListener('DOMContentLoaded', init);
-}else{
-  init();
 }
