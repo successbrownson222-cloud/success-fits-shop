@@ -446,6 +446,22 @@ def order_stats(email: str = ""):
         except:
             pass
 
+@app.get("/api/categories/counts")
+def category_counts():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT category, COUNT(*) as cnt FROM products GROUP BY category")
+    rows = cur.fetchall()
+    conn.close()
+    counts = {}
+    total = 0
+    for r in rows:
+        cat = (r["category"] or "").lower()
+        counts[cat] = r["cnt"]
+        total += r["cnt"]
+    counts["all"] = total
+    return counts
+
 @app.get("/admin")
 def admin_page():
     if ADMIN_HTML:
