@@ -374,18 +374,39 @@ async function doCheckout(){
   const fullAddr=`${addr}, ${lga}, ${state}`;
   IS_CHECKING_OUT=true;
   try{
-    const r = await fetch(API_BASE + '/api/orders', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    email: user.email,
-    items: itemsText,
-    total: total,
-    address: fullAddr,
-    phone: phone,
-    state: state,
-    lga: lga,
-    delivery_date: date,
-    delivery_time: time
-  })
-});
+    const d=await r.json();
+    if(d.ok){
+      showToast('Order #'+d.order_id+' placed');
+      CART=[];
+      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
+      localStorage.setItem('sf_cart_guest', JSON.stringify([]));
+      updateAll();
+      try{ 
+        await fetch(API_BASE+'/api/cart/clear',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({email:user.email.toLowerCase()})
+        }); 
+      }catch{}
+      ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText='0'; });
+      const list=safe('cartList');
+      if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:20px">✅ Order placed! Cart cleared</div>';
+      const ct=safe('c_total'); if(ct) ct.innerText='₦0';
+      closeAll(); 
+      loadOrderCount();
+    }else{
+      alert(d.error||'Failed');
+    }
+  }catch(e){ 
+    alert('Checkout error: '+e.message);
+  }
+  finally{
+    setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000);
+  }
+}
+
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', init);
+}else{
+  init();
+}
