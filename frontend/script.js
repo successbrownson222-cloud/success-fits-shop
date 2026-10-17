@@ -8,6 +8,7 @@ const STATES={
   "Rivers":["Port Harcourt","Obio-Akpor","Eleme"],
   "Others":["Other"]
 };
+let IS_CHECKING_OUT=false;
 
 function safe(id){ return document.getElementById(id) }
 
@@ -26,7 +27,7 @@ async function init(){
 
     if(user?.email){
       await loadCartFromBackend(false);
-      setInterval(()=> loadCartFromBackend(true), 5000);
+      setInterval(()=> { if(!IS_CHECKING_OUT) loadCartFromBackend(true) }, 5000);
     }
 
     updateAll();
@@ -95,6 +96,8 @@ function updateAll(){ try{
   const mlo=safe('menuLogout'); if(mlo) mlo.style.display=user?'block':'none';
   const ma=safe('menuAdmin'); if(ma) ma.style.display=(user&&user.role==='admin')?'block':'none';
   const qty=CART.reduce((s,c)=>s+(c.qty||0),0);
+  ['count','cartCount2','cartCount','bottomCount','menuOrderCount'].forEach(id=>{ const el=safe(id); if(el && id==='menuOrderCount'){ } else if(el) el.innerText=qty; });
+  // Keep cart badges separate from order count badge
   ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText=qty; });
   const list=safe('cartList'); if(!list) return; list.innerHTML=''; let total=0;
   CART.forEach((p,i)=>{ total+= (Number(p.price)||0)*(p.qty||1); list.appendChild(createCartRow(p,i)); });
@@ -103,9 +106,9 @@ function updateAll(){ try{
   const fn=safe('c_fullname'); if(fn&&user&&!fn.value) fn.value=user.name||'';
 }catch(e){console.log('updateAll',e)}}
 
-// === FIXED VERSION - NO MORE 2-SECOND RESET ===
 async function loadCartFromBackend(silent=false){
   if(!user?.email) return;
+  if(IS_CHECKING_OUT) return;
   try{
     const r=await fetch(API_BASE+'/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
     const d=await r.json();
@@ -122,15 +125,20 @@ async function loadCartFromBackend(silent=false){
         color: it.color||''
       }));
 
-      // CRITICAL FIX: If backend is empty but local has items, DON'T wipe local
-      if(backendCart.length===0 && CART.length>0){
-        console.log('Backend empty, keeping local cart and syncing to backend');
-        // Push local to backend instead of wiping
-        if(!silent) await syncFullCartToBackend();
+      // FIXED: If cart is intentionally empty (after checkout), NEVER restore it
+      if(CART.length===0){
+        // Keep empty, don't push old guest cart
+        localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
+        localStorage.setItem('sf_cart_guest', JSON.stringify([]));
+        updateAll();
         return;
       }
 
-      // Only sync if backend has items and is different
+      if(backendCart.length===0 && CART.length>0 && !silent){
+        console.log('Backend empty but local has items, will sync local to backend (not after checkout)');
+        return;
+      }
+
       if(backendCart.length>0 && JSON.stringify(backendCart)!== JSON.stringify(CART)){
         CART = backendCart;
         localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify(CART));
@@ -162,6 +170,7 @@ async function syncAddToBackend(product_id, qty=1){
 
 async function syncFullCartToBackend(){
   if(!user?.email) return;
+  if(IS_CHECKING_OUT) return;
   try{
     await fetch(API_BASE+'/api/cart/clear',{
       method:'POST',
@@ -217,7 +226,7 @@ async function doAuth(){
         }
         closeAll(); updateAll(); loadOrderCount(); showToast('Welcome '+user.email);
         if(msgEl) msgEl.innerText='';
-        setInterval(()=> loadCartFromBackend(true), 5000);
+        setInterval(()=> { if(!IS_CHECKING_OUT) loadCartFromBackend(true) }, 5000);
       }
     }else{
       if(msgEl) msgEl.innerText=d.error||'Error';
@@ -268,7 +277,10 @@ async function removeItem(i){
 
 function createOrderCard(o){
   const card=document.createElement('div'); card.className='orderCard';
-  const title=document.createElement('b'); title.textContent=`#${o.id} • ₦${Number(o.total).toLocaleString()}`;
+  const st=(o.status||'pending').toUpperCase();
+  const col=o.status==='delivered'?'#0f0':'#ffcc00';
+  const title=document.createElement('div'); 
+  title.innerHTML=`<b>#${o.id} • ₦${Number(o.total).toLocaleString()}</b> <span style="background:#222;color:${col};padding:2px 8px;border-radius:10px;font-size:11px;margin-left:8px">${st}</span>`;
   const details=document.createElement('div'); details.style.cssText='color:#888;font-size:12px;margin-top:6px;white-space:pre-line';
   details.textContent=`${o.address||''}\n${o.state||''} ${o.lga||''} • ${o.delivery_date||''} ${o.delivery_time||''}\n${o.phone||''}\nItems: ${o.items||''}`;
   const btnWrap=document.createElement('div'); btnWrap.style.marginTop='8px';
@@ -299,17 +311,30 @@ async function doCheckout(){
   const total=CART.reduce((s,c)=>s+(Number(c.price)||0)*(c.qty||1),0);
   const itemsText=CART.map(c=>`${c.name} x${c.qty}`).join(', ');
   const fullAddr=`${addr}, ${lga}, ${state}`;
-
+  IS_CHECKING_OUT=true;
   try{
     const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items:itemsText,total,address:fullAddr,phone,state,lga,delivery_date:date,delivery_time:time||''})});
     const d=await r.json();
     if(d.ok){
       showToast('Order #'+d.order_id+' placed');
-      CART=[]; saveCart();
+      // FORCE CLEAR EVERYWHERE
+      CART=[];
+      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
+      localStorage.setItem('sf_cart_guest', JSON.stringify([]));
+      updateAll();
+      // clear backend cart
       try{ await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})}); }catch{}
+      // clear UI badges manually
+      ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText='0'; });
+      const list=safe('cartList');
+      if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:20px">✅ Order placed! Cart cleared</div>';
+      const ct=safe('c_total'); if(ct) ct.innerText='₦0';
       closeAll(); loadOrderCount();
     }else alert(d.error||'Failed');
   }catch(e){ alert('Checkout error: '+e.message) }
+  finally{
+    setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000);
+  }
 }
 
 if(document.readyState==='loading'){
