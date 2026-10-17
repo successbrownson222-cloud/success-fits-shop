@@ -1,10 +1,13 @@
 <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin Secure</title>
-<style>*{box-sizing:border-box;font-family:system-ui}body{background:#000;color:#fff;padding:15px}.box{background:#111;padding:20px;border-radius:20px;max-width:500px;margin:20px auto}input{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff}button{width:100%;padding:13px;border:none;border-radius:12px;font-weight:900;margin-top:8px;cursor:pointer}.red{background:#ff2d55;color:#fff}.white{background:#fff;color:#000}.gray{background:#222;color:#fff}.card{background:#151515;padding:12px;margin:10px 0;border-radius:14px;border:1px solid #222;display:flex;gap:12px}.card img{width:70px;height:70px;object-fit:cover;border-radius:10px}.hidden{display:none}.row{display:flex;gap:8px}.row button{flex:1}
+<style>*{box-sizing:border-box;font-family:system-ui}body{background:#000;color:#fff;padding:15px}.box{background:#111;padding:20px;border-radius:20px;max-width:500px;margin:20px auto}input,select{width:100%;padding:13px;margin:6px 0;background:#1a1a1a;border:1px solid #333;border-radius:12px;color:#fff}button{width:100%;padding:13px;border:none;border-radius:12px;font-weight:900;margin-top:8px;cursor:pointer}.red{background:#ff2d55;color:#fff}.white{background:#fff;color:#000}.gray{background:#222;color:#fff}.card{background:#151515;padding:12px;margin:10px 0;border-radius:14px;border:1px solid #222;display:flex;gap:12px}.card img{width:70px;height:70px;object-fit:cover;border-radius:10px}.hidden{display:none}.row{display:flex;gap:8px}.row button{flex:1}
 .orderCard{background:#151515;border:1px solid #222;border-radius:14px;padding:12px;margin:8px 0}
 .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800}
 .badge-pending{background:#332200;color:#ffcc00}
 .badge-delivered{background:#003322;color:#00ff99}
 #notifBar{position:sticky;top:0;background:#ff2d55;color:#fff;padding:10px 14px;border-radius:12px;margin-bottom:10px;display:none;justify-content:space-between;align-items:center;z-index:5}
+.catFilters{display:flex;gap:8px;overflow-x:auto;padding:10px 0}
+.catFilters button{padding:8px 14px;border-radius:20px;border:1px solid #333;background:#111;color:#aaa;cursor:pointer;white-space:nowrap;font-size:12px}
+.catFilters button.active{background:#fff;color:#000}
 </style></head><body>
 <div id="loginBox" class="box"><h2>🔐 Secure Admin Login</h2><p style="color:#888;font-size:13px">Only: successbrownson222@gmail.com</p>
 <input id="email" value="successbrownson222@gmail.com"><input id="pass" type="password" placeholder="Password">
@@ -16,14 +19,22 @@
 <div id="notifBar"><span id="notifText">🔔 0 new orders</span><button onclick="loadOrders()" style="width:auto;padding:4px 10px;background:#fff;color:#000">Refresh</button></div>
 
 <hr style="margin:10px 0;border-color:#222">
-<input id="name" placeholder="Product Name"><input id="price" type="number" placeholder="Price e.g 25000"><input id="image" placeholder="Image URL"><input id="category" placeholder="Category e.g Men"><button class="red" onclick="addProduct()">Add Product</button><p id="msg2"></p>
+<h4>Add Product</h4>
+<input id="name" placeholder="Product Name"><input id="price" type="number" placeholder="Price e.g 25000"><input id="image" placeholder="Image URL">
+<!-- CATEGORY NOW FETCHES FROM BACKEND - SINGLE SOURCE -->
+<select id="category"></select>
+<button class="red" onclick="addProduct()">Add Product</button><p id="msg2"></p>
 <hr style="border-color:#222;margin:15px 0">
 <h4>Edit Price / Product</h4>
-<input id="edit_id" type="number" placeholder="Product ID to edit"><input id="edit_name" placeholder="New Name (optional)"><input id="edit_price" type="number" placeholder="New Price"><input id="edit_image" placeholder="New Image URL (optional)"><input id="edit_category" placeholder="New Category (optional)">
+<input id="edit_id" type="number" placeholder="Product ID to edit"><input id="edit_name" placeholder="New Name (optional)"><input id="edit_price" type="number" placeholder="New Price"><input id="edit_image" placeholder="New Image URL (optional)">
+<select id="edit_category"></select>
 <div class="row"><button class="white" onclick="updateProduct()">Update Product</button><button class="gray" onclick="fillEdit()">Fill from list</button></div>
 <p id="msg3" style="color:#0f0"></p>
 <hr style="border-color:#222;margin:15px 0">
-<h4>Products (<span id="count">0</span>)</h4><div id="list"></div>
+<h4>Products (<span id="count">0</span>)</h4>
+<!-- ADMIN FILTERS FETCHED FROM BACKEND -->
+<div id="adminCatFilters" class="catFilters"></div>
+<div id="list"></div>
 
 <hr style="border-color:#222;margin:20px 0">
 <h4>📦 Orders <span id="orderCount" style="background:#ff2d55;padding:2px 8px;border-radius:10px">0</span> <span id="orderStats" style="color:#888;font-size:12px"></span></h4>
@@ -35,14 +46,63 @@
 <script>
 let ADMIN="";
 let ALL_PRODUCTS=[];
+let ADMIN_CATEGORIES=[];
 let NOTIF_ON=true;
 let LAST_ORDER_ID=0;
+
 async function api(path,body){ try{ let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); }catch(e){ return {error:e.message} } }
+
+// === BEST PRACTICE: FETCH CATEGORIES FROM BACKEND ===
+async function loadAdminCategories(){
+  try{
+    let r=await fetch('/api/categories');
+    let d=await r.json();
+    ADMIN_CATEGORIES = d.categories || [];
+  }catch(e){
+    ADMIN_CATEGORIES = [{id:"men_clothing",name:"Men Clothing",icon:"👕"}];
+  }
+  const sel = document.getElementById('category');
+  const editSel = document.getElementById('edit_category');
+  const filterDiv = document.getElementById('adminCatFilters');
+  if(sel){
+    sel.innerHTML='';
+    ADMIN_CATEGORIES.filter(c=>c.id!=='all').forEach(c=>{
+      const o=document.createElement('option');
+      o.value=c.id;
+      o.textContent=`${c.icon||''} ${c.name}`;
+      sel.appendChild(o);
+    });
+  }
+  if(editSel){
+    editSel.innerHTML='<option value="">-- Keep old / Select new --</option>';
+    ADMIN_CATEGORIES.filter(c=>c.id!=='all').forEach(c=>{
+      const o=document.createElement('option');
+      o.value=c.id;
+      o.textContent=`${c.icon||''} ${c.name}`;
+      editSel.appendChild(o);
+    });
+  }
+  if(filterDiv){
+    filterDiv.innerHTML='';
+    ADMIN_CATEGORIES.forEach(c=>{
+      const b=document.createElement('button');
+      b.textContent=`${c.icon||''} ${c.name}`;
+      if(c.id==='all') b.classList.add('active');
+      b.onclick=()=>{
+        filterDiv.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        load(c.id);
+      };
+      filterDiv.appendChild(b);
+    });
+  }
+}
+
 async function login(){
  document.getElementById('msg').innerText='Checking...';
  let email=document.getElementById('email').value.trim().toLowerCase(), pass=document.getElementById('pass').value;
  let d=await api('/api/auth/login',{email,password:pass});
- if(d.ok){ ADMIN=email; localStorage.setItem('admin',JSON.stringify(d.user)); document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=email+' ('+d.user.role+')'; load(); loadOrders(); startOrderPolling(); document.getElementById('msg').innerText=''; }
+ if(d.ok){ ADMIN=email; localStorage.setItem('admin',JSON.stringify(d.user)); document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=email+' ('+d.user.role+')'; await loadAdminCategories(); load(); loadOrders(); startOrderPolling(); document.getElementById('msg').innerText=''; }
  else document.getElementById('msg').innerText='❌ '+(d.error||'Failed');
 }
 async function signup(){
@@ -53,11 +113,23 @@ async function signup(){
  document.getElementById('msg').innerText= d.ok?'✅ Created! Now Login':'❌ '+(d.error||'Error');
 }
 function logout(){ localStorage.removeItem('admin'); location.reload(); }
-async function load(){ let r=await fetch('/api/products'); let j=await r.json(); let arr=Array.isArray(j)?j:j.products||[]; ALL_PRODUCTS=arr; document.getElementById('count').innerText=arr.length; document.getElementById('list').innerHTML=arr.map(p=>`<div class="card"><img src="${p.image}" onerror="this.src='https://via.placeholder.com/70'"><div style="flex:1"><b>#${p.id} ${p.name}</b><br><span style="color:#ff2d55">₦${Number(p.price).toLocaleString()}</span> <small style="color:#888">${p.category||''}</small><br><div class="row" style="margin-top:8px"><button onclick="quickEdit(${p.id})" style="padding:6px;background:#fff;color:#000;border-radius:8px;font-weight:700">Edit</button><button onclick="del(${p.id})" style="padding:6px;background:#222;color:#f55;border-radius:8px">Delete</button></div></div></div>`).join(''); }
+
+async function load(cat='all'){
+  let url='/api/products';
+  if(cat && cat!=='all') url+='?category='+encodeURIComponent(cat);
+  let r=await fetch(url);
+  let j=await r.json();
+  let arr=Array.isArray(j)?j:j.products||[];
+  // keep ALL for edit, but display filtered if filtered
+  if(cat==='all') ALL_PRODUCTS=arr;
+  document.getElementById('count').innerText=arr.length;
+  document.getElementById('list').innerHTML=arr.map(p=>`<div class="card"><img src="${p.image}" onerror="this.src='https://via.placeholder.com/70'"><div style="flex:1"><b>#${p.id} ${p.name}</b><br><span style="color:#ff2d55">₦${Number(p.price).toLocaleString()}</span> <small style="color:#888">${(p.category||'').replace(/_/g,' ')}</small><br><div class="row" style="margin-top:8px"><button onclick="quickEdit(${p.id})" style="padding:6px;background:#fff;color:#000;border-radius:8px;font-weight:700">Edit</button><button onclick="del(${p.id})" style="padding:6px;background:#222;color:#f55;border-radius:8px">Delete</button></div></div></div>`).join('');
+}
 
 function quickEdit(id){
-  const p=ALL_PRODUCTS.find(x=>x.id==id);
-  if(!p) return;
+  const p=ALL_PRODUCTS.find(x=>x.id==id) || null;
+  // if filtered list not containing, fetch all
+  if(!p){ alert('Switch to All to edit'); return; }
   document.getElementById('edit_id').value=p.id;
   document.getElementById('edit_name').value=p.name;
   document.getElementById('edit_price').value=p.price;
@@ -98,7 +170,6 @@ async function updateProduct(){
 }
 async function del(id){ if(!confirm('Delete '+id+'?'))return; let r=await fetch(`/api/admin/delete-product?product_id=${id}&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'}); let d=await r.json(); alert(JSON.stringify(d)); load(); }
 
-// === NEW: ADMIN ORDER NOTIFICATIONS + DELIVERED STATUS ===
 async function loadOrders(){
   if(!ADMIN) return;
   try{
@@ -106,7 +177,6 @@ async function loadOrders(){
     let orders = await r.json();
     if(!Array.isArray(orders)) return;
     document.getElementById('orderCount').innerText = orders.length;
-    // check new order for notification
     if(orders.length>0){
       const maxId = Math.max(...orders.map(o=>o.id));
       if(LAST_ORDER_ID && maxId > LAST_ORDER_ID && NOTIF_ON){
@@ -115,7 +185,6 @@ async function loadOrders(){
       }
       LAST_ORDER_ID = maxId;
     }
-    // stats
     try{
       let sr = await fetch(`/api/orders/stats?email=${encodeURIComponent(ADMIN)}`);
       let st = await sr.json();
@@ -147,7 +216,6 @@ function showNotifBar(pending){
   const txt=document.getElementById('notifText');
   if(pending>0){ txt.innerText=`🔔 ${pending} pending order(s)`; bar.style.display='flex'; document.title=`(${pending}) New Orders - Admin`; } else { bar.style.display='none'; document.title='Admin Secure'; }
 }
-
 function beepNewOrder(){
   try{
     const ctx = new (window.AudioContext||window.webkitAudioContext)();
@@ -162,7 +230,6 @@ function beepNewOrder(){
     }
   }catch(e){}
 }
-
 async function markDelivered(id){
   if(!confirm('Mark order #'+id+' as DELIVERED?')) return;
   let r=await fetch(`/api/orders/update-status?id=${id}&status=delivered&admin_email=${encodeURIComponent(ADMIN)}`,{method:'POST'});
@@ -188,5 +255,5 @@ function startOrderPolling(){
   if(Notification.permission!=='granted'){ Notification.requestPermission(); }
 }
 
-let s=localStorage.getItem('admin'); if(s){ try{ let u=JSON.parse(s); ADMIN=u.email; document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=u.email; load(); loadOrders(); startOrderPolling(); }catch{} }
+let s=localStorage.getItem('admin'); if(s){ try{ let u=JSON.parse(s); ADMIN=u.email; document.getElementById('loginBox').classList.add('hidden'); document.getElementById('dash').classList.remove('hidden'); document.getElementById('who').innerText=u.email; loadAdminCategories().then(()=>load()); loadOrders(); startOrderPolling(); }catch{} }
 </script></body></html>
