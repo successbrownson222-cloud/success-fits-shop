@@ -76,6 +76,25 @@ def find_frontend_file(name: str):
 ADMIN_HTML = find_frontend_file("admin.html")
 INDEX_HTML = find_frontend_file("index.html")
 
+# === NEW: CATEGORIES LIST - ONE LIST POWERS ALL ===
+ALL_CATEGORIES = [
+    {"id": "all", "name": "All", "icon": "🛍️"},
+    {"id": "men_clothing", "name": "Men Clothing", "icon": "👕"},
+    {"id": "women_clothing", "name": "Women Clothing", "icon": "👗"},
+    {"id": "men_shoes", "name": "Men Shoes", "icon": "👞"},
+    {"id": "women_shoes", "name": "Women Shoes", "icon": "👠"},
+    {"id": "children_clothing", "name": "Children Clothing", "icon": "🧒"},
+    {"id": "children_shoes", "name": "Children Shoes", "icon": "👟"},
+    {"id": "gadgets", "name": "Gadgets", "icon": "📱"},
+    {"id": "television", "name": "Television", "icon": "📺"},
+    {"id": "fridges", "name": "Fridges", "icon": "❄️"},
+    {"id": "air_conditioner", "name": "Air Conditioner", "icon": "💨"},
+    {"id": "kitchen_utensils", "name": "Kitchen Utensils", "icon": "🍳"},
+    {"id": "furniture", "name": "Furniture", "icon": "🛋️"},
+    {"id": "cars", "name": "Cars", "icon": "🚗"},
+    {"id": "home_appliances", "name": "Home Appliances", "icon": "🏠"},
+]
+
 @app.get("/api/health")
 def health():
     conn = get_conn(); db_ok = bool(conn)
@@ -83,6 +102,10 @@ def health():
         try: conn.close()
         except: pass
     return {"ok": True, "db": db_ok, "bcrypt": HAS_BCRYPT, "admin": ADMIN_EMAILS}
+
+@app.get("/api/categories")
+def get_categories():
+    return {"ok": True, "categories": ALL_CATEGORIES}
 
 def ensure_cart_table(cur):
     cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT NOT NULL, product_id INT NOT NULL, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW());")
@@ -152,14 +175,17 @@ def auth_login(data: AuthReq):
             except: pass
 
 @app.get("/api/products")
-def get_products():
+def get_products(category: str = ""):
     conn = None
     try:
         conn = get_conn()
         if conn:
             with conn.cursor() as cur:
                 cur.execute("CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name TEXT, price INT, image TEXT, category TEXT)")
-                cur.execute("SELECT id,name,price,image,category FROM products ORDER BY id DESC")
+                if category and category.lower() != "all":
+                    cur.execute("SELECT id,name,price,image,category FROM products WHERE LOWER(category)=LOWER(%s) ORDER BY id DESC", (category,))
+                else:
+                    cur.execute("SELECT id,name,price,image,category FROM products ORDER BY id DESC")
                 rows = cur.fetchall()
                 return rows or []
     except Exception as e: print("products error", e)
@@ -303,7 +329,7 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
         conn2 = get_conn()
         if conn2:
@@ -351,7 +377,7 @@ def delete_order(id: int, email: str = ""):
         try: conn.close()
         except: pass
 
-# === NEW FEATURES - CART BADGE + ORDER STATUS + ADMIN NOTIFICATIONS ===
+# === NEW FEATURES - CART BADGE + ORDER STATUS + ADMIN NOTIFICATIONS (NOT TOUCHED) ===
 @app.get("/api/cart/count")
 def cart_count(email: str = ""):
     clean = clean_email(email)
@@ -377,10 +403,13 @@ def update_order_status(request: Request):
     oid = qp.get("id")
     status = qp.get("status", "delivered")
     a_email = clean_email(qp.get("admin_email") or request.headers.get("x-admin-email","") or qp.get("email",""))
-    if not oid: return JSONResponse({"error":"id required"}, status_code=400)
-    if not is_admin(a_email): return JSONResponse({"error":"Not authorized"}, status_code=401)
+    if not oid:
+        return JSONResponse({"error":"id required"}, status_code=400)
+    if not is_admin(a_email):
+        return JSONResponse({"error":"Not authorized"}, status_code=401)
     conn = get_conn()
-    if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
+    if not conn:
+        return JSONResponse({"error":"DB not connected"}, status_code=500)
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
@@ -390,14 +419,18 @@ def update_order_status(request: Request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
-        try: conn.close()
-        except: pass
+        try:
+            conn.close()
+        except:
+            pass
 
 @app.get("/api/orders/stats")
 def order_stats(email: str = ""):
-    if not is_admin(email): return JSONResponse({"error":"Not authorized"}, status_code=401)
+    if not is_admin(email):
+        return JSONResponse({"error":"Not authorized"}, status_code=401)
     conn = get_conn()
-    if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
+    if not conn:
+        return JSONResponse({"error":"DB not connected"}, status_code=500)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT status, COUNT(*) as c FROM orders GROUP BY status")
@@ -408,23 +441,30 @@ def order_stats(email: str = ""):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
-        try: conn.close()
-        except: pass
+        try:
+            conn.close()
+        except:
+            pass
 
 @app.get("/admin")
 def admin_page():
-    if ADMIN_HTML: return FileResponse(ADMIN_HTML)
+    if ADMIN_HTML:
+        return FileResponse(ADMIN_HTML)
     return HTMLResponse("<h1>Admin not found</h1>", status_code=404)
 
 @app.get("/")
 def root_page():
-    if INDEX_HTML: return FileResponse(INDEX_HTML)
+    if INDEX_HTML:
+        return FileResponse(INDEX_HTML)
     return HTMLResponse("<h1>Success Fits Running</h1>")
 
 @app.get("/{full_path:path}")
 def catch_all(full_path: str):
-    if full_path.startswith("api/"): return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404)
+    if full_path.startswith("api/"):
+        return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404)
     fp = find_frontend_file(full_path)
-    if fp: return FileResponse(fp)
-    if INDEX_HTML: return FileResponse(INDEX_HTML)
+    if fp:
+        return FileResponse(fp)
+    if INDEX_HTML:
+        return FileResponse(INDEX_HTML)
     return JSONResponse({"detail": f"Not found: {full_path}"}, status_code=404)
