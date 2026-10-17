@@ -9,8 +9,9 @@ const STATES={
   "Others":["Other"]
 };
 
-// BEST PRACTICE: single source from backend, no hardcoded list here
+// BEST PRACTICE: single source from backend
 let CATEGORIES = [];
+let CATEGORY_COUNTS = {};
 let IS_CHECKING_OUT=false;
 
 function safe(id){ return document.getElementById(id) }
@@ -22,7 +23,6 @@ async function init(){
     const sc=localStorage.getItem('sf_cart_'+(user?.email?.toLowerCase()||'guest'));
     if(sc){ try{ CART=JSON.parse(sc)||[]; }catch{} }
 
-    // Load categories first from backend (single source of truth)
     await renderCategories();
 
     const r = await fetch(API_BASE+'/api/products');
@@ -30,6 +30,7 @@ async function init(){
     PRODUCTS = Array.isArray(d)? d : (d.products || d.items || []);
 
     renderProducts(PRODUCTS);
+    await updateCategoryCounts(); // show counts after products loaded
 
     if(user?.email){
       await loadCartFromBackend(false);
@@ -47,6 +48,7 @@ async function init(){
   }
 }
 
+// === NEW: FETCH CATEGORIES + SHOW STOCK COUNT ===
 async function renderCategories(){
   const container = safe('catFilters');
   if(!container) return;
@@ -55,20 +57,53 @@ async function renderCategories(){
     const d = await r.json();
     CATEGORIES = d.categories || d || [];
   }catch(e){
-    console.log('categories fetch failed, using fallback');
     CATEGORIES = [
       {id:"all", name:"All", icon:"🛍️"},
       {id:"men_clothing", name:"Men Clothing", icon:"👕"},
       {id:"gadgets", name:"Gadgets", icon:"📱"}
     ];
   }
+  // try get counts (if backend has endpoint)
+  try{
+    const rc = await fetch(API_BASE+'/api/categories/counts');
+    if(rc.ok){ CATEGORY_COUNTS = await rc.json(); }
+  }catch{}
+
   container.innerHTML = '';
   CATEGORIES.forEach(cat=>{
+    const count = CATEGORY_COUNTS[cat.id] ?? 0;
     const btn = document.createElement('button');
-    btn.textContent = `${cat.icon||''} ${cat.name}`;
-    if(cat.id==='all') btn.classList.add('active');
-    btn.onclick = (ev)=> filterCat(cat.id, ev.target);
+    // Show: Icon Name (count)
+    btn.innerHTML = `${cat.icon||''} ${cat.name} <span style="background:#1e1e1e;border:1px solid #2a2a2a;padding:2px 8px;border-radius:20px;margin-left:6px;font-size:11px;color:#ff2d55">${count}</span>`;
+    if(cat.id==='all'){
+      btn.classList.add('active');
+      // All count = total products
+      if(!CATEGORY_COUNTS['all']) btn.innerHTML = `${cat.icon||''} ${cat.name} <span style="background:#1e1e1e;border:1px solid #2a2a2a;padding:2px 8px;border-radius:20px;margin-left:6px;font-size:11px;color:#ff2d55">${PRODUCTS.length || count}</span>`;
+    }
+    btn.onclick = (ev)=> filterCat(cat.id, ev.currentTarget);
     container.appendChild(btn);
+  });
+}
+
+async function updateCategoryCounts(){
+  // local count fallback if backend /counts fails
+  if(Object.keys(CATEGORY_COUNTS).length===0){
+    CATEGORY_COUNTS = {all: PRODUCTS.length};
+    PRODUCTS.forEach(p=>{
+      const c = (p.category||'').toLowerCase();
+      CATEGORY_COUNTS[c] = (CATEGORY_COUNTS[c]||0)+1;
+    });
+  }
+  // re-render with counts
+  const container = safe('catFilters');
+  if(!container) return;
+  container.querySelectorAll('button').forEach((btn, idx)=>{
+    const cat = CATEGORIES[idx];
+    if(!cat) return;
+    const count = CATEGORY_COUNTS[cat.id] ?? CATEGORY_COUNTS[cat.id.toLowerCase()] ?? 0;
+    const totalForAll = CATEGORY_COUNTS['all'] ?? PRODUCTS.length;
+    const displayCount = cat.id==='all' ? totalForAll : count;
+    btn.innerHTML = `${cat.icon||''} ${cat.name} <span style="background:#1e1e1e;border:1px solid #2a2a2a;padding:2px 8px;border-radius:20px;margin-left:6px;font-size:11px;color:${displayCount>0?'#0f0':'#666'}">${displayCount}</span>`;
   });
 }
 
@@ -90,8 +125,9 @@ function renderProducts(list){
     const name=document.createElement('div'); name.style.cssText='font-weight:700;margin-top:6px;font-size:14px'; name.textContent=p.name;
     const cat=document.createElement('div'); cat.style.cssText='font-size:11px;color:#666;margin:2px 0'; cat.textContent=(p.category||'').replace(/_/g,' ').toUpperCase();
     const price=document.createElement('div'); price.style.color='#aaa'; price.textContent='₦'+Number(p.price).toLocaleString();
+    const stock=document.createElement('div'); stock.style.cssText='font-size:11px;color:#0f0;margin:2px 0'; stock.textContent='In Stock';
     const btn=document.createElement('button'); btn.textContent='Add to Cart'; btn.className='btn'; btn.onclick=()=>addToCart(p.id);
-    card.append(img,name,cat,price,btn); g.appendChild(card);
+    card.append(img,name,cat,price,stock,btn); g.appendChild(card);
   });
 }
 
@@ -338,27 +374,18 @@ async function doCheckout(){
   const fullAddr=`${addr}, ${lga}, ${state}`;
   IS_CHECKING_OUT=true;
   try{
-    const r=await fetch(API_BASE+'/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,items:itemsText,total,address:fullAddr,phone,state,lga,delivery_date:date,delivery_time:time||''})});
-    const d=await r.json();
-    if(d.ok){
-      showToast('Order #'+d.order_id+' placed');
-      CART=[];
-      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
-      localStorage.setItem('sf_cart_guest', JSON.stringify([]));
-      updateAll();
-      try{ await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})}); }catch{}
-      ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText='0'; });
-      const list=safe('cartList');
-      if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:20px">✅ Order placed! Cart cleared</div>';
-      const ct=safe('c_total'); if(ct) ct.innerText='₦0';
-      closeAll(); loadOrderCount();
-    }else alert(d.error||'Failed');
-  }catch(e){ alert('Checkout error: '+e.message) }
-  finally{ setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000); }
-}
-
-if(document.readyState==='loading'){
-  document.addEventListener('DOMContentLoaded', init);
-}else{
-  init();
-}
+    const r = await fetch(API_BASE + '/api/orders', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: user.email,
+    items: itemsText,
+    total: total,
+    address: fullAddr,
+    phone: phone,
+    state: state,
+    lga: lga,
+    delivery_date: date,
+    delivery_time: time
+  })
+});
