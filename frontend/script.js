@@ -9,25 +9,8 @@ const STATES={
   "Others":["Other"]
 };
 
-// === NEW: ALL CATEGORIES - SAME LIST AS BACKEND ===
-const CATEGORIES = [
-  {id:"all", name:"All", icon:"🛍️"},
-  {id:"men_clothing", name:"Men Clothing", icon:"👕"},
-  {id:"women_clothing", name:"Women Clothing", icon:"👗"},
-  {id:"men_shoes", name:"Men Shoes", icon:"👞"},
-  {id:"women_shoes", name:"Women Shoes", icon:"👠"},
-  {id:"children_clothing", name:"Children Clothing", icon:"🧒"},
-  {id:"children_shoes", name:"Children Shoes", icon:"👟"},
-  {id:"gadgets", name:"Gadgets", icon:"📱"},
-  {id:"television", name:"Television", icon:"📺"},
-  {id:"fridges", name:"Fridges", icon:"❄️"},
-  {id:"air_conditioner", name:"Air Conditioner", icon:"💨"},
-  {id:"kitchen_utensils", name:"Kitchen Utensils", icon:"🍳"},
-  {id:"furniture", name:"Furniture", icon:"🛋️"},
-  {id:"cars", name:"Cars", icon:"🚗"},
-  {id:"home_appliances", name:"Home Appliances", icon:"🏠"},
-];
-
+// BEST PRACTICE: single source from backend, no hardcoded list here
+let CATEGORIES = [];
 let IS_CHECKING_OUT=false;
 
 function safe(id){ return document.getElementById(id) }
@@ -39,11 +22,13 @@ async function init(){
     const sc=localStorage.getItem('sf_cart_'+(user?.email?.toLowerCase()||'guest'));
     if(sc){ try{ CART=JSON.parse(sc)||[]; }catch{} }
 
+    // Load categories first from backend (single source of truth)
+    await renderCategories();
+
     const r = await fetch(API_BASE+'/api/products');
     const d = await r.json();
     PRODUCTS = Array.isArray(d)? d : (d.products || d.items || []);
 
-    renderCategories();
     renderProducts(PRODUCTS);
 
     if(user?.email){
@@ -62,15 +47,27 @@ async function init(){
   }
 }
 
-function renderCategories(){
-  const container = safe('catFilters') || document.querySelector('.filters');
+async function renderCategories(){
+  const container = safe('catFilters');
   if(!container) return;
+  try{
+    const r = await fetch(API_BASE+'/api/categories');
+    const d = await r.json();
+    CATEGORIES = d.categories || d || [];
+  }catch(e){
+    console.log('categories fetch failed, using fallback');
+    CATEGORIES = [
+      {id:"all", name:"All", icon:"🛍️"},
+      {id:"men_clothing", name:"Men Clothing", icon:"👕"},
+      {id:"gadgets", name:"Gadgets", icon:"📱"}
+    ];
+  }
   container.innerHTML = '';
   CATEGORIES.forEach(cat=>{
     const btn = document.createElement('button');
-    btn.textContent = `${cat.icon} ${cat.name}`;
+    btn.textContent = `${cat.icon||''} ${cat.name}`;
     if(cat.id==='all') btn.classList.add('active');
-    btn.onclick = (e)=> filterCat(cat.id, e.target);
+    btn.onclick = (ev)=> filterCat(cat.id, ev.target);
     container.appendChild(btn);
   });
 }
@@ -100,14 +97,13 @@ function renderProducts(list){
 
 async function filterCat(c,b){
   if(b){
-    document.querySelectorAll('.filters button, #catFilters button').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('#catFilters button').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
   }
   if(c==='All' || c==='all'){
     renderProducts(PRODUCTS);
     return;
   }
-  // Try client filter first
   const filtered = PRODUCTS.filter(x=>{
     const cat = (x.category||'').toLowerCase();
     return cat === c.toLowerCase() || cat.includes(c.toLowerCase());
@@ -115,7 +111,6 @@ async function filterCat(c,b){
   if(filtered.length>0){
     renderProducts(filtered);
   } else {
-    // If not found locally, fetch from API (one endpoint powers all)
     try{
       showToast('Loading '+c.replace(/_/g,' ')+'...');
       const r = await fetch(`${API_BASE}/api/products?category=${encodeURIComponent(c)}`);
@@ -160,7 +155,6 @@ function updateAll(){ try{
   const mlo=safe('menuLogout'); if(mlo) mlo.style.display=user?'block':'none';
   const ma=safe('menuAdmin'); if(ma) ma.style.display=(user&&user.role==='admin')?'block':'none';
   const qty=CART.reduce((s,c)=>s+(c.qty||0),0);
-  ['count','cartCount2','cartCount','bottomCount','menuOrderCount'].forEach(id=>{ const el=safe(id); if(el && id==='menuOrderCount'){ } else if(el) el.innerText=qty; });
   ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText=qty; });
   const list=safe('cartList'); if(!list) return; list.innerHTML=''; let total=0;
   CART.forEach((p,i)=>{ total+= (Number(p.price)||0)*(p.qty||1); list.appendChild(createCartRow(p,i)); });
@@ -187,18 +181,13 @@ async function loadCartFromBackend(silent=false){
         size: it.size||'M',
         color: it.color||''
       }));
-
       if(CART.length===0){
         localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
         localStorage.setItem('sf_cart_guest', JSON.stringify([]));
         updateAll();
         return;
       }
-
-      if(backendCart.length===0 && CART.length>0 && !silent){
-        return;
-      }
-
+      if(backendCart.length===0 && CART.length>0 && !silent){ return; }
       if(backendCart.length>0 && JSON.stringify(backendCart)!== JSON.stringify(CART)){
         CART = backendCart;
         localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify(CART));
@@ -215,13 +204,7 @@ async function syncAddToBackend(product_id, qty=1){
     const r=await fetch(API_BASE+'/api/cart/add',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        email:user.email.toLowerCase(),
-        product_id:Number(product_id),
-        qty: Number(qty),
-        size: 'M',
-        color: ''
-      })
+      body:JSON.stringify({ email:user.email.toLowerCase(), product_id:Number(product_id), qty:Number(qty), size:'M', color:'' })
     });
     const d=await r.json();
     return r.ok && (d.ok||d.items!==undefined);
@@ -232,22 +215,12 @@ async function syncFullCartToBackend(){
   if(!user?.email) return;
   if(IS_CHECKING_OUT) return;
   try{
-    await fetch(API_BASE+'/api/cart/clear',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:user.email.toLowerCase()})
-    });
+    await fetch(API_BASE+'/api/cart/clear',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:user.email.toLowerCase()}) });
     for(const c of CART){
       await fetch(API_BASE+'/api/cart/add',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          email:user.email.toLowerCase(),
-          product_id:Number(c.id || c.product_id),
-          qty: Number(c.qty||1),
-          size: c.size||'M',
-          color: c.color||''
-        })
+        body:JSON.stringify({ email:user.email.toLowerCase(), product_id:Number(c.id||c.product_id), qty:Number(c.qty||1), size:c.size||'M', color:c.color||'' })
       });
     }
   }catch(e){ console.log('full sync error',e) }
@@ -307,12 +280,8 @@ async function addToCart(id){
   saveCart();
   showToast('Adding...');
   const ok=await syncAddToBackend(id, 1);
-  if(ok){
-    showToast('Added ✅ - check mobile app in 5 sec');
-  } else {
-    showToast('Added locally, retrying sync...');
-    setTimeout(()=> syncFullCartToBackend(), 1500);
-  }
+  if(ok){ showToast('Added ✅ - check mobile app in 5 sec'); }
+  else { showToast('Added locally, retrying sync...'); setTimeout(()=> syncFullCartToBackend(), 1500); }
 }
 
 async function changeQty(i,d){
@@ -327,9 +296,7 @@ async function removeItem(i){
   CART.splice(i,1);
   saveCart();
   if(item && user?.email){
-    try{
-      await fetch(`${API_BASE}/api/cart?email=${encodeURIComponent(user.email)}&product_id=${item.id||item.product_id}`, {method:'DELETE'});
-    }catch{}
+    try{ await fetch(`${API_BASE}/api/cart?email=${encodeURIComponent(user.email)}&product_id=${item.id||item.product_id}`, {method:'DELETE'}); }catch{}
   }
   await syncFullCartToBackend();
   showToast('Removed');
@@ -349,9 +316,7 @@ function createOrderCard(o){
 }
 
 async function loadOrderCount(){ if(!user) return; try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); const d=await r.json(); const el=safe('menuOrderCount'); if(Array.isArray(d)&&el) el.innerText=d.length; }catch{} }
-
 async function viewOrders(){ if(!user) return openAuth(); closeAll(); safe('ordersModal')?.classList.add('show'); safe('overlay')?.classList.add('show'); try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); const orders=await r.json(); const list=safe('ordersList'); if(!list) return; list.innerHTML=''; if(!Array.isArray(orders)||!orders.length){ const empty=document.createElement('div'); empty.style.cssText='color:#666;text-align:center'; empty.textContent='No orders yet'; list.appendChild(empty); return; } orders.forEach(o=>list.appendChild(createOrderCard(o))); }catch(e){} }
-
 async function deleteOrder(id){ if(!confirm('Delete #'+id+'?')) return; try{ const r=await fetch(API_BASE+'/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); const d=await r.json(); if(d.ok){ showToast('Deleted'); viewOrders(); loadOrderCount(); } else showToast('Delete failed'); }catch{ showToast('Delete error'); } }
 
 async function doCheckout(){
@@ -386,12 +351,10 @@ async function doCheckout(){
       const list=safe('cartList');
       if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:20px">✅ Order placed! Cart cleared</div>';
       const ct=safe('c_total'); if(ct) ct.innerText='₦0';
-            closeAll(); loadOrderCount();
+      closeAll(); loadOrderCount();
     }else alert(d.error||'Failed');
   }catch(e){ alert('Checkout error: '+e.message) }
-  finally{
-    setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000);
-  }
+  finally{ setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000); }
 }
 
 if(document.readyState==='loading'){
