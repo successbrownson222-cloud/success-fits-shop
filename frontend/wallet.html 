@@ -2,18 +2,18 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SuccessPay - My Wallet</title>
+<title>SuccessPay Wallet</title>
 <style>
-body{font-family:Arial;padding:15px;background:#f5f5f5}
-.card{background:white;padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-bottom:15px}
-.bal{font-size:32px;font-weight:bold;color:#111}
-.acct{background:#eef6ff;padding:12px;border-radius:8px;font-family:monospace;font-size:18px;margin:10px 0}
-.btn{width:100%;padding:14px;border:none;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:10px}
-.btn-blue{background:#0a58ca;color:white}
-.btn-black{background:#111;color:white}
-.btn-green{background:#0a8a42;color:white}
-input{width:100%;padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:8px;font-size:16px;box-sizing:border-box}
-.small{color:#666;font-size:13px}
+body{font-family:Arial;padding:15px;background:#070707;color:#fff}
+.card{background:#111;border:1px solid #222;padding:20px;border-radius:16px;margin-bottom:15px}
+.bal{font-size:34px;font-weight:900;color:#0aff7a}
+.acct{background:#1a2a1a;padding:14px;border-radius:10px;font-family:monospace;font-size:20px;margin:10px 0;color:#0aff7a;border:1px dashed #0aff7a}
+.btn{width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:900;cursor:pointer;margin-top:10px}
+.btn-blue{background:#0aff7a;color:#000}
+.btn-black{background:#fff;color:#000}
+.btn-green{background:#0aff7a;color:#000}
+input{width:100%;padding:14px;margin:8px 0;background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;border-radius:10px;font-size:16px;box-sizing:border-box}
+.small{color:#888;font-size:13px}
 </style>
 </head>
 <body>
@@ -23,13 +23,9 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:8
 <p class="small" id="userEmail">Loading...</p>
 <h1 class="bal" id="balance">₦0.00</h1>
 <p class="small">Wallet Balance</p>
-
-<div class="acct">
-<span id="vAccount">---- ----</span><br>
-<small id="bankName">SUCCESS PAY MFB</small>
-</div>
-<p class="small">Transfer to this account from any bank app to fund your wallet. It will auto-credit.</p>
-<button class="btn btn-blue" onclick="loadWallet()">🔄 Refresh Balance</button>
+<div class="acct"><span id="vAccount">----</span><br><small style="font-size:11px;color:#fff">SUCCESS PAY MFB</small></div>
+<p class="small">Tap account to copy. Transfer from any bank app to fund.</p>
+<button class="btn btn-blue" onclick="loadWallet()">🔄 Refresh</button>
 </div>
 
 <div class="card" id="createBox" style="display:none">
@@ -39,45 +35,46 @@ input{width:100%;padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:8
 </div>
 
 <div class="card">
-<h3>Pay Order with Wallet</h3>
-<input id="orderId" type="number" placeholder="Order ID (e.g 12)">
-<input id="amount" type="number" placeholder="Amount in Kobo (e.g 500000 = ₦5000)">
-<input id="pinPay" type="password" placeholder="Enter Wallet PIN">
-<button class="btn btn-green" onclick="payOrder()">Pay Now</button>
-<p id="payMsg" class="small"></p>
+<h3>Test Funding (Phone Mode)</h3>
+<p class="small">No Postman needed. Click to credit yourself ₦5000 for testing checkout.</p>
+<button onclick="testFund()" style="background:#333;color:#fff;padding:12px;border:none;border-radius:10px;width:100%;margin-top:10px;font-weight:800">🧪 TEST FUND ₦5000</button>
+<button onclick="testFund10000()" style="background:#222;color:#0aff7a;padding:12px;border:1px solid #0aff7a;border-radius:10px;width:100%;margin-top:8px;font-weight:800">🧪 TEST FUND ₦10000</button>
+<p id="fundMsg" class="small" style="margin-top:10px"></p>
+</div>
+
+<div class="card">
+<a href="/" style="color:#ff2d55;text-decoration:none">← Back to Shop</a>
 </div>
 
 <script>
-const API = window.location.origin; // same domain
-let email = localStorage.getItem('sf_email') || localStorage.getItem('email') || '';
+const API = window.location.origin;
+let email = localStorage.getItem('sf_email') || localStorage.getItem('email') || localStorage.getItem('userEmail') || '';
 if(!email){
   email = prompt("Enter your email to load wallet:");
   if(email) localStorage.setItem('sf_email', email);
 }
-document.getElementById('userEmail').innerText = email;
+document.getElementById('userEmail').innerText = email || "Guest";
 
 async function loadWallet(){
   if(!email){ alert("No email"); return; }
   try{
-    let res = await fetch(`${API}/api/payments/wallet/${email}`);
+    let res = await fetch(`${API}/api/payments/wallet/${encodeURIComponent(email)}`);
     let data = await res.json();
-    if(res.ok){
+    if(res.ok && data.ok){
       document.getElementById('balance').innerText = `₦${(data.balance/100).toLocaleString()}`;
       document.getElementById('vAccount').innerText = data.virtual_account;
       document.getElementById('createBox').style.display='none';
     } else {
-      // wallet not found
       document.getElementById('createBox').style.display='block';
       document.getElementById('vAccount').innerText = 'No wallet yet';
+      document.getElementById('balance').innerText = '₦0.00';
     }
-  }catch(e){
-    alert("Error: "+e.message);
-  }
+  }catch(e){ alert(e.message); }
 }
 
 async function createWallet(){
   let pin = document.getElementById('pin1').value;
-  if(pin.length < 4){ alert("PIN must be 4 digits"); return; }
+  if(pin.length < 4){ alert("PIN 4 digits"); return; }
   try{
     let res = await fetch(`${API}/api/payments/create-wallet`, {
       method: 'POST',
@@ -85,44 +82,47 @@ async function createWallet(){
       body: JSON.stringify({email: email, pin: pin})
     });
     let data = await res.json();
-    if(data.ok){
-      alert("Wallet created! Account: "+data.virtual_account);
-      loadWallet();
-    } else {
-      alert("Failed: "+JSON.stringify(data));
-    }
+    if(data.ok){ alert("Wallet created! "+data.virtual_account); loadWallet(); }
+    else alert(JSON.stringify(data));
   }catch(e){ alert(e.message); }
 }
 
-async function payOrder(){
-  let oid = document.getElementById('orderId').value;
-  let amt = document.getElementById('amount').value;
-  let pin = document.getElementById('pinPay').value;
-  if(!oid || !amt || !pin){ alert("Fill all"); return; }
-  document.getElementById('payMsg').innerText = "Processing...";
+async function testFund(){
+  let acct = document.getElementById('vAccount').innerText.trim();
+  if(!acct || acct.includes('No wallet') || acct.includes('--') || acct.length < 8){ alert("Create wallet first"); return; }
+  document.getElementById('fundMsg').innerText = "Funding...";
   try{
-    let res = await fetch(`${API}/api/payments/pay-order`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({email: email, order_id: parseInt(oid), amount: parseInt(amt), pin: pin})
+    let res = await fetch(`${API}/api/payments/webhook/bank`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({account_number: acct, amount: 5000, transaction_ref: 'TEST'+Date.now()})
     });
     let data = await res.json();
-    if(data.ok){
-      document.getElementById('payMsg').innerText = "✅ Paid! Ref: "+data.ref+" New Bal: ₦"+(data.new_balance/100);
-      loadWallet();
-    } else {
-      document.getElementById('payMsg').innerText = "❌ "+(data.error || data.detail || "Failed");
-    }
-  }catch(e){ document.getElementById('payMsg').innerText = e.message; }
+    document.getElementById('fundMsg').innerText = JSON.stringify(data);
+    if(data.ok) loadWallet();
+  }catch(e){ document.getElementById('fundMsg').innerText = e.message; }
 }
 
-// auto load
-loadWallet();
+async function testFund10000(){
+  let acct = document.getElementById('vAccount').innerText.trim();
+  if(!acct || acct.includes('No wallet') || acct.includes('--') || acct.length < 8){ alert("Create wallet first"); return; }
+  document.getElementById('fundMsg').innerText = "Funding ₦10000...";
+  try{
+    let res = await fetch(`${API}/api/payments/webhook/bank`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({account_number: acct, amount: 10000, transaction_ref: 'TEST'+Date.now()})
+    });
+    let data = await res.json();
+    document.getElementById('fundMsg').innerText = JSON.stringify(data);
+    if(data.ok) loadWallet();
+  }catch(e){ document.getElementById('fundMsg').innerText = e.message; }
+}
 
-// copy account on click
+loadWallet();
 document.getElementById('vAccount').onclick = function(){
-  let txt = this.innerText;
-  navigator.clipboard.writeText(txt).then(()=>alert("Copied: "+txt));
+  let txt = this.innerText.trim();
+  if(txt.length > 5){ navigator.clipboard.writeText(txt).then(()=>alert("Copied: "+txt)); }
 }
 </script>
 </body>
