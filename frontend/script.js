@@ -127,41 +127,74 @@ function renderProducts(list){
   if(!list.length){
     const e=document.createElement('div');
     e.style.cssText='grid-column:1/3;text-align:center;color:#666;padding:30px';
-    e.textContent='No products in this category — go to /admin to add';
+    e.textContent='No products';
     g.appendChild(e); return;
   }
   list.forEach(p=>{
     const variant = getVariantForCategory(p.category);
-    const card=document.createElement('div'); card.className='card';
-    const img=document.createElement('img'); img.src=p.image||PH; img.loading='lazy'; img.onerror=function(){this.src=PH};
+    const card=document.createElement('div'); card.className='card'; card.style.position='relative';
+    const img=document.createElement('img'); img.src=p.image||PH; img.loading='lazy';
     const name=document.createElement('div'); name.style.cssText='font-weight:700;margin-top:6px;font-size:14px'; name.textContent=p.name;
     const cat=document.createElement('div'); cat.style.cssText='font-size:11px;color:#666;margin:2px 0'; cat.textContent=(p.category||'').replace(/_/g,' ').toUpperCase();
     const price=document.createElement('div'); price.style.color='#aaa'; price.textContent='₦'+Number(p.price).toLocaleString();
-    const stock=document.createElement('div'); stock.style.cssText='font-size:11px;color:#0f0;margin:2px 0'; stock.textContent='In Stock';
+    const stock=document.createElement('div'); stock.style.cssText='font-size:11px;color:#0f0;margin:2px 0 6px'; stock.textContent='In Stock';
 
-    const selWrap=document.createElement('div'); selWrap.style.cssText='margin:8px 0;display:flex;flex-wrap:wrap;gap:4px';
-    const selLabel=document.createElement('div'); selLabel.style.cssText='font-size:11px;color:#ff2d55;width:100%'; selLabel.textContent=variant.label+':';
-    selWrap.appendChild(selLabel);
-    let selectedVal = variant.options[0];
+    // === DROPDOWN BOX (hidden) ===
+    const dropdown=document.createElement('div');
+    dropdown.style.cssText='display:none;position:absolute;bottom:55px;left:10px;right:10px;background:#111;border:1px solid #ff2d55;border-radius:12px;padding:10px;z-index:5;box-shadow:0 10px 30px rgba(0,0,0,0.8)';
+    
+    const dropTitle=document.createElement('div');
+    dropTitle.style.cssText='font-size:12px;font-weight:bold;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center';
+    dropTitle.innerHTML=`<span>Choose ${variant.label}</span> <span style="cursor:pointer;font-size:16px" class="closeDrop">✕</span>`;
+    
+    const optionsWrap=document.createElement('div');
+    optionsWrap.style.cssText='display:flex;flex-wrap:wrap;gap:6px';
+    
+    let selectedVal = null;
+    
     variant.options.forEach(opt=>{
       const b=document.createElement('button');
+      b.type='button';
       b.textContent=opt;
-      b.style.cssText='padding:4px 8px;border:1px solid #333;background:#151515;color:#fff;border-radius:6px;font-size:11px;cursor:pointer';
-      if(opt===selectedVal){ b.style.background='#ff2d55'; b.style.borderColor='#ff2d55'; }
+      b.style.cssText='padding:6px 12px;border:1px solid #333;background:#1e1e1e;color:#fff;border-radius:20px;font-size:12px;cursor:pointer';
       b.onclick=()=>{
-        selWrap.querySelectorAll('button').forEach(x=>{ x.style.background='#151515'; x.style.borderColor='#333'; });
+        optionsWrap.querySelectorAll('button').forEach(x=>{ x.style.background='#1e1e1e'; x.style.borderColor='#333'; x.style.color='#fff'; });
         b.style.background='#ff2d55'; b.style.borderColor='#ff2d55';
         selectedVal=opt;
       };
-      selWrap.appendChild(b);
+      optionsWrap.appendChild(b);
     });
 
-    const btn=document.createElement('button'); btn.textContent='Add to Cart'; btn.className='btn'; 
-    btn.onclick=()=>addToCart(p.id, selectedVal, variant.label);
+    const confirmBtn=document.createElement('button');
+    confirmBtn.textContent='Confirm & Add to Cart';
+    confirmBtn.style.cssText='width:100%;margin-top:10px;background:#ff2d55;color:#fff;border:none;padding:10px;border-radius:8px;font-weight:bold;cursor:pointer';
+    confirmBtn.onclick=()=>{
+      if(!selectedVal){ showToast('Please choose '+variant.label); return; }
+      dropdown.style.display='none';
+      addToCart(p.id, selectedVal, variant.label);
+    };
+
+    dropdown.append(dropTitle,optionsWrap,confirmBtn);
+    dropTitle.querySelector('.closeDrop').onclick=()=> dropdown.style.display='none';
+
+    // === MAIN ADD BUTTON ===
+    const btn=document.createElement('button'); 
+    btn.textContent='Add to Cart'; 
+    btn.className='btn'; 
+    btn.onclick=()=>{
+      // if only 1 option, add directly
+      if(variant.options.length===1){
+        addToCart(p.id, variant.options[0], variant.label);
+      } else {
+        dropdown.style.display = dropdown.style.display==='none' || !dropdown.style.display ? 'block' : 'none';
+      }
+    };
     
-    card.append(img,name,cat,price,stock,selWrap,btn); g.appendChild(card);
+    card.append(img,name,cat,price,stock,dropdown,btn); 
+    g.appendChild(card);
   });
 }
+
 
 async function filterCat(c,b){
   if(b){
