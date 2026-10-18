@@ -1,101 +1,126 @@
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
-from sqlalchemy.orm import Session
-from passlib.context import CryptContext
-import hmac, hashlib, os, random, time
+from fastapi import APIRouter, Depends, Header, Request, HTTPException
+import os, random, time, hmac, hashlib
+from pydantic import BaseModel
 
-from database import get_db
-from models import Wallet, Transaction, OrderPayment
+# Use your existing get_conn style
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+try:
+    import bcrypt
+    HAS_BCRYPT = True
+except:
+    HAS_BCRYPT = False
 
 router = APIRouter(prefix="/api/payments", tags=["SuccessPay Banking"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-BANK_WEBHOOK_SECRET = os.getenv("BANK_WEBHOOK_SECRET", "your_super_secret_123")
+BANK_SECRET = os.getenv("BANK_WEBHOOK_SECRET", "test_secret_123")
 
-def generate_virtual_account():
-    return "99" + str(random.randint(10000000, 99999999)) + str(random.randint(10,99))
+def get_conn():
+    url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
+    if not url: return None
+    if "sslmode" in url:
+        conn = psycopg2.connect(url, cursor_factory=RealDictCursor)
+    else:
+        conn = psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
+    conn.autocommit = True
+    return conn
+
+def hash_pin(pin: str):
+    if HAS_BCRYPT: return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
+    import hashlib; return hashlib.sha256(pin.encode()).hexdigest()
+
+def check_pin(pin: str, hashed: str):
+    if HAS_BCRYPT:
+        try: return bcrypt.checkpw(pin.encode(), hashed.encode())
+        except: return False
+    import hashlib; return hashlib.sha256(pin.encode()).hexdigest() == hashed
+
+def gen_account():
+    return "99" + str(random.randint(10000000,99999999)) + str(random.randint(10,99))
+
+def ensure_tables(cur):
+    cur.execute("CREATE TABLE IF NOT EXISTS sf_wallets (email TEXT PRIMARY KEY, balance INT DEFAULT 0, pin_hash TEXT, virtual_account TEXT UNIQUE, created_at TIMESTAMP DEFAULT NOW());")
+    cur.execute("CREATE TABLE IF NOT EXISTS sf_transactions (id SERIAL PRIMARY KEY, email TEXT, type TEXT, amount INT, ref TEXT UNIQUE, status TEXT DEFAULT 'success', meta_data JSONB, created_at TIMESTAMP DEFAULT NOW());")
+
+class WalletReq(BaseModel): email: str; pin: str
+class PayReq(BaseModel): email: str; order_id: int; pin: str; amount: int
 
 @router.post("/create-wallet")
-def create_wallet(email: str, pin: str, db: Session = Depends(get_db)):
-    wallet = db.query(Wallet).filter(Wallet.email==email).first()
-    if wallet:
-        return {"ok": True, "message": "Wallet exists", "account": wallet.virtual_account}
-    
-    v_account = generate_virtual_account()
-    new_wallet = Wallet(
-        email=email.lower(),
-        balance=0,
-        pin_hash=pwd_context.hash(pin),
-        virtual_account=v_account
-    )
-    db.add(new_wallet)
-    db.commit()
-    # TODO: Call Providus/Wema API here to reserve this account in real bank
-    return {"ok": True, "virtual_account": v_account, "bank_name": "SUCCESS PAY MFB", "balance": 0}
+def create_wallet(req: WalletReq):
+    conn = get_conn()
+    if not conn: raise HTTPException(500, "DB not connected")
+    try:
+        with conn.cursor() as cur:
+            ensure_tables(cur)
+            cur.execute("SELECT virtual_account, balance FROM sf_wallets WHERE LOWER(email)=LOWER(%s)", (req.email,))
+            row = cur.fetchone()
+            if row:
+                return {"ok": True, "virtual_account": row['virtual_account'], "balance": row['balance'], "bank": "SUCCESS PAY MFB"}
+            v_acc = gen_account()
+            cur.execute("INSERT INTO sf_wallets (email, balance, pin_hash, virtual_account) VALUES (%s, %s, %s, %s)", (req.email.lower(), 0, hash_pin(req.pin), v_acc))
+            return {"ok": True, "virtual_account": v_acc, "bank": "SUCCESS PAY MFB", "balance": 0}
+    finally:
+        try: conn.close()
+        except: pass
 
 @router.get("/wallet/{email}")
-def get_wallet(email: str, db: Session = Depends(get_db)):
-    w = db.query(Wallet).filter(Wallet.email==email.lower()).first()
-    if not w:
-        raise HTTPException(status_code=404, detail="Wallet not found")
-    return {"email": w.email, "balance": w.balance, "balance_naira": w.balance/100, "virtual_account": w.virtual_account}
-
-@router.post("/webhook/bank")
-async def bank_webhook(request: Request, x_signature: str = Header(None), db: Session = Depends(get_db)):
-    body = await request.body()
-    # 1. VERIFY SIGNATURE - VERY IMPORTANT
-    expected_sig = hmac.new(BANK_WEBHOOK_SECRET.encode(), body, hashlib.sha512).hexdigest()
-    if x_signature != expected_sig:
-        # For testing allow without sig, remove in production
-        print("Warning: signature mismatch")
-        # raise HTTPException(status_code=401, detail="Invalid signature")
-    
-    data = await request.json()
-    account_number = data.get("account_number")
-    amount = int(float(data.get("amount", 0)) * 100) # to kobo
-    trans_ref = data.get("transaction_ref")
-
-    # 2. IDEMPOTENCY - prevent double credit
-    exists = db.query(Transaction).filter(Transaction.ref==trans_ref).first()
-    if exists:
-        return {"ok": True, "message": "Already processed"}
-
-    wallet = db.query(Wallet).filter(Wallet.virtual_account==account_number).first()
-    if not wallet:
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    # 3. CREDIT - Double entry
-    trx = Transaction(email=wallet.email, type="fund", amount=amount, ref=trans_ref, status="success", meta_data=data)
-    wallet.balance += amount
-    db.add(trx)
-    db.commit()
-
-    return {"ok": True, "credited": amount, "new_balance": wallet.balance}
+def get_wallet(email: str):
+    conn = get_conn()
+    if not conn: raise HTTPException(500, "DB not connected")
+    try:
+        with conn.cursor() as cur:
+            ensure_tables(cur)
+            cur.execute("SELECT email, balance, virtual_account FROM sf_wallets WHERE LOWER(email)=LOWER(%s)", (email,))
+            row = cur.fetchone()
+            if not row: raise HTTPException(404, "Wallet not found")
+            return {"ok": True, "email": row['email'], "balance": row['balance'], "balance_naira": row['balance']/100, "virtual_account": row['virtual_account']}
+    finally:
+        try: conn.close()
+        except: pass
 
 @router.post("/pay-order")
-def pay_order(email: str, order_id: int, pin: str, db: Session = Depends(get_db)):
-    wallet = db.query(Wallet).filter(Wallet.email==email.lower()).first()
-    if not wallet:
-        raise HTTPException(status_code=404, detail="Wallet not found")
-    
-    if not pwd_context.verify(pin, wallet.pin_hash):
-        raise HTTPException(status_code=401, detail="Invalid PIN")
+def pay_order(req: PayReq):
+    conn = get_conn()
+    if not conn: raise HTTPException(500, "DB not connected")
+    try:
+        with conn.cursor() as cur:
+            ensure_tables(cur)
+            cur.execute("SELECT balance, pin_hash FROM sf_wallets WHERE LOWER(email)=LOWER(%s)", (req.email,))
+            w = cur.fetchone()
+            if not w: raise HTTPException(404, "Wallet not found")
+            if not check_pin(req.pin, w['pin_hash']): raise HTTPException(401, "Invalid PIN")
+            if w['balance'] < req.amount:
+                return {"ok": False, "error": "Insufficient balance", "balance": w['balance']}
+            ref = f"PAY_{int(time.time())}_{req.order_id}"
+            cur.execute("UPDATE sf_wallets SET balance = balance - %s WHERE LOWER(email)=LOWER(%s)", (req.amount, req.email.lower()))
+            cur.execute("INSERT INTO sf_transactions (email, type, amount, ref, status) VALUES (%s,'debit',%s,%s,'success')", (req.email.lower(), req.amount, ref))
+            return {"ok": True, "ref": ref, "new_balance": w['balance'] - req.amount}
+    finally:
+        try: conn.close()
+        except: pass
 
-    payment = db.query(OrderPayment).filter(OrderPayment.order_id==order_id).first()
-    if not payment:
-        raise HTTPException(status_code=404, detail="Order payment not found")
-    
-    if wallet.balance < payment.amount:
-        return {"ok": False, "error": "Insufficient balance", "balance": wallet.balance, "needed": payment.amount}
-
-    # Deduct
-    ref = f"PAY_{int(time.time())}_{order_id}"
-    wallet.balance -= payment.amount
-    
-    trx = Transaction(email=email.lower(), type="debit", amount=payment.amount, ref=ref, status="success", meta_data={"order_id": order_id})
-    payment.payment_status = "paid"
-    payment.payment_ref = ref
-    payment.payment_method = "wallet"
-
-    db.add(trx)
-    db.commit()
-
-    return {"ok": True, "ref": ref, "new_balance": wallet.balance, "message": f"Order #{order_id} paid"}
+@router.post("/webhook/bank")
+async def bank_webhook(request: Request):
+    data = await request.json()
+    account = data.get("account_number")
+    amount = int(float(data.get("amount",0))*100)
+    t_ref = data.get("transaction_ref") or f"BNK_{int(time.time())}"
+    conn = get_conn()
+    if not conn: raise HTTPException(500, "DB not connected")
+    try:
+        with conn.cursor() as cur:
+            ensure_tables(cur)
+            cur.execute("SELECT email FROM sf_wallets WHERE virtual_account=%s", (account,))
+            u = cur.fetchone()
+            if not u: raise HTTPException(404, "Account not found")
+            cur.execute("SELECT id FROM sf_transactions WHERE ref=%s", (t_ref,))
+            if cur.fetchone():
+                return {"ok": True, "msg": "Already credited"}
+            cur.execute("UPDATE sf_wallets SET balance = balance + %s WHERE virtual_account=%s", (amount, account))
+            cur.execute("INSERT INTO sf_transactions (email, type, amount, ref, status, meta_data) VALUES (%s,'fund',%s,%s,'success',%s)", (u['email'], amount, t_ref, str(data)))
+            cur.execute("SELECT balance FROM sf_wallets WHERE virtual_account=%s", (account,))
+            bal = cur.fetchone()
+            return {"ok": True, "new_balance": bal['balance']}
+    finally:
+        try: conn.close()
+        except: pass
