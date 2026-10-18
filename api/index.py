@@ -74,6 +74,7 @@ def find_frontend_file(name: str):
         if p.exists(): return str(p)
     return None
 
+app.include_router(payments_router)
 ADMIN_HTML = find_frontend_file("admin.html")
 INDEX_HTML = find_frontend_file("index.html")
 
