@@ -25,8 +25,8 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=False)
 
 app.include_router(auth_router)
-app.include_router(payments_router)  # here!
-app.mount("/", StaticFiles(directory="frontend"))  # always last
+app.include_router(some_other_router)
+app.include_router(payments_router)
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "successbrown222@gmail.com").strip().lower()
 ADMIN_EMAILS = [e.strip().lower() for e in ADMIN_EMAIL.split(",") if e.strip()] or ["successbrown222@gmail.com"]
