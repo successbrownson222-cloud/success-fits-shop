@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from payment import router as payments_router
 from pydantic import BaseModel
 import os, pathlib
 import psycopg2
@@ -13,21 +12,17 @@ try:
 except:
     HAS_BCRYPT = False
 
-
-# SuccessPay - safe load, won't crash site if it fails
-try:
-    from payment import router as payments_router
-    app.include_router(payments_router)
-except Exception as e:
-    print("Payment router skipped:", e)
-
+# 1. CREATE APP FIRST - Nothing before this
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=False)
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=["*"], 
+    allow_methods=["*"], 
+    allow_headers=["*"], 
+    allow_credentials=False
+)
 
-app.include_router(auth_router)
-app.include_router(some_other_router)
-app.include_router(payments_router)
-
+# 2. HELPERS
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "successbrown222@gmail.com").strip().lower()
 ADMIN_EMAILS = [e.strip().lower() for e in ADMIN_EMAIL.split(",") if e.strip()] or ["successbrown222@gmail.com"]
 
@@ -35,8 +30,7 @@ def get_conn():
     url = os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
     if not url: return None
     try:
-        if "sslmode" in url: conn = psycopg2.connect(url, cursor_factory=RealDictCursor)
-        else: conn = psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
+        conn = psycopg2.connect(url, cursor_factory=RealDictCursor, sslmode='require')
         conn.autocommit = True
         return conn
     except Exception as e:
@@ -65,12 +59,14 @@ def is_admin(email: str):
 def hash_pw(pw: str):
     if HAS_BCRYPT: return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
     import hashlib; return hashlib.sha256(pw.encode()).hexdigest()
+
 def check_pw(pw: str, hashed: str):
     if HAS_BCRYPT:
         try: return bcrypt.checkpw(pw.encode(), hashed.encode())
         except: return False
     import hashlib; return hashlib.sha256(pw.encode()).hexdigest() == hashed
 
+# 3. MODELS
 class AuthReq(BaseModel): email: str; password: str; name: str = ""
 class ProductReq(BaseModel): name: str; price: int; image: str = ""; category: str = "General"; secret: str = ""; admin_email: str = ""; adminEmail: str = ""
 class ProductUpdateReq(BaseModel): id: int; name: str = ""; price: int = 0; image: str = ""; category: str = ""; admin_email: str = ""; adminEmail: str = ""; secret: str = ""
@@ -89,7 +85,6 @@ def find_frontend_file(name: str):
 ADMIN_HTML = find_frontend_file("admin.html")
 INDEX_HTML = find_frontend_file("index.html")
 
-# === NEW: CATEGORIES LIST - ONE LIST POWERS ALL ===
 ALL_CATEGORIES = [
     {"id": "all", "name": "All", "icon": "🛍️"},
     {"id": "men_clothing", "name": "Men Clothing", "icon": "👕"},
@@ -122,13 +117,8 @@ def get_categories():
 
 def ensure_cart_table(cur):
     cur.execute("CREATE TABLE IF NOT EXISTS carts (id SERIAL PRIMARY KEY, email TEXT NOT NULL, product_id INT NOT NULL, qty INT DEFAULT 1, created_at TIMESTAMP DEFAULT NOW());")
-    cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS id SERIAL;")
-    cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();")
     cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS size TEXT DEFAULT 'M';")
     cur.execute("ALTER TABLE carts ADD COLUMN IF NOT EXISTS color TEXT DEFAULT '';")
-    cur.execute("DROP INDEX IF EXISTS idx_carts_email_product_simple;")
-    try: cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_carts_email_product_full ON carts(LOWER(email), product_id, size, color);")
-    except: pass
 
 @app.post("/api/login")
 def simple_login(req: SimpleLogin):
@@ -342,7 +332,8 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
+            # FIXED - 8 placeholders for 8 values
+            cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
         conn2 = get_conn()
         if conn2:
@@ -390,7 +381,6 @@ def delete_order(id: int, email: str = ""):
         try: conn.close()
         except: pass
 
-# === NEW FEATURES - CART BADGE + ORDER STATUS + ADMIN NOTIFICATIONS (NOT TOUCHED) ===
 @app.get("/api/cart/count")
 def cart_count(email: str = ""):
     clean = clean_email(email)
