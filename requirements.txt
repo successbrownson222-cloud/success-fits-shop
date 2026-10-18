@@ -1,5 +1,5 @@
-fastapi
-uvicorn
-pydantic
-psycopg2-binary
-bcrypt
+fastapi==0.110.0
+uvicorn==0.29.0
+psycopg2-binary==2.9.9
+bcrypt==4.1.2
+pydantic==2.6.0
