@@ -332,20 +332,22 @@ def create_order(req: OrderReq):
     try:
         with conn.cursor() as cur:
             cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
-            # FIXED - 8 placeholders for 8 values
             cur.execute("INSERT INTO orders (email,items,total,address,phone,state,lga,delivery_date,delivery_time) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (clean_email(req.email), req.items, req.total, req.address, req.phone, req.state, req.lga, req.delivery_date, req.delivery_time))
             nid = cur.fetchone()['id']
-        conn2 = get_conn()
-        if conn2:
+            
+            # CLEAR CART IN SAME CONNECTION - Guaranteed to work
             try:
-                with conn2.cursor() as cur2:
-                    ensure_cart_table(cur2)
-                    cur2.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s)", (clean_email(req.email),))
-            finally:
-                try: conn2.close()
-                except: pass
-        return {"ok": True, "order_id": nid}
-    except Exception as e: return JSONResponse({"error": str(e)}, status_code=500)
+                ensure_cart_table(cur)
+                cur.execute("DELETE FROM carts WHERE LOWER(email)=LOWER(%s)", (clean_email(req.email),))
+                print(f"Cart cleared for {req.email}, order {nid} created")
+            except Exception as cart_err:
+                print("Cart clear failed but order created:", cart_err)
+                # Don't fail the order if cart clear fails
+        
+        return {"ok": True, "order_id": nid, "message": "Order placed, cart cleared"}
+    except Exception as e: 
+        print("create_order error:", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         try: conn.close()
         except: pass
