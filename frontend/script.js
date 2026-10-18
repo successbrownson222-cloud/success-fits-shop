@@ -488,3 +488,9 @@ async function doCheckout(){
     setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000);
   }
 }
+
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded', init);
+}else{
+  init();
+}
