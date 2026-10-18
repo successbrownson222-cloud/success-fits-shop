@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from payments import router as payments_router
+from payment import router as payments_router
 from pydantic import BaseModel
 import os, pathlib
 import psycopg2
