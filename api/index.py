@@ -358,9 +358,7 @@ def get_orders(email: str = "", all: str = ""):
     if not conn: return JSONResponse({"error":"DB not connected"}, status_code=500)
     try:
         with conn.cursor() as cur:
-            cur.execute("CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, email TEXT, items TEXT, total INT, address TEXT, phone TEXT, state TEXT, lga TEXT, delivery_date TEXT, delivery_time TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())")
             clean = (email or "").strip().lower()
-            print(f"GET ORDERS REQUEST email='{email}' clean='{clean}' all='{all}'")
             if all == "true" and is_admin(email):
                 cur.execute("SELECT * FROM orders ORDER BY id DESC")
             elif clean:
@@ -368,11 +366,8 @@ def get_orders(email: str = "", all: str = ""):
             else:
                 cur.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 50")
             rows = cur.fetchall()
-            print(f"Found {len(rows)} orders for {clean}")
         return rows
-    except Exception as e:
-        print("get_orders error:", e)
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception as e: return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         try: conn.close()
         except: pass
