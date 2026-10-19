@@ -9,7 +9,6 @@ const STATES={
   "Others":["Other"]
 };
 
-// === VARIANT CHOICES PER CATEGORY ===
 const VARIANT_CONFIG = {
   men_shoes: { label: "Shoe Size", options: ["40","41","42","43","44","45","46"] },
   women_shoes: { label: "Shoe Size", options: ["36","37","38","39","40","41","42"] },
@@ -138,20 +137,14 @@ function renderProducts(list){
     const cat=document.createElement('div'); cat.style.cssText='font-size:11px;color:#666;margin:2px 0'; cat.textContent=(p.category||'').replace(/_/g,' ').toUpperCase();
     const price=document.createElement('div'); price.style.color='#aaa'; price.textContent='₦'+Number(p.price).toLocaleString();
     const stock=document.createElement('div'); stock.style.cssText='font-size:11px;color:#0f0;margin:2px 0 6px'; stock.textContent='In Stock';
-
-    // === DROPDOWN BOX (hidden) ===
     const dropdown=document.createElement('div');
     dropdown.style.cssText='display:none;position:absolute;bottom:55px;left:10px;right:10px;background:#111;border:1px solid #ff2d55;border-radius:12px;padding:10px;z-index:5;box-shadow:0 10px 30px rgba(0,0,0,0.8)';
-    
     const dropTitle=document.createElement('div');
     dropTitle.style.cssText='font-size:12px;font-weight:bold;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center';
     dropTitle.innerHTML=`<span>Choose ${variant.label}</span> <span style="cursor:pointer;font-size:16px" class="closeDrop">✕</span>`;
-    
     const optionsWrap=document.createElement('div');
     optionsWrap.style.cssText='display:flex;flex-wrap:wrap;gap:6px';
-    
     let selectedVal = null;
-    
     variant.options.forEach(opt=>{
       const b=document.createElement('button');
       b.type='button';
@@ -164,7 +157,6 @@ function renderProducts(list){
       };
       optionsWrap.appendChild(b);
     });
-
     const confirmBtn=document.createElement('button');
     confirmBtn.textContent='Confirm & Add to Cart';
     confirmBtn.style.cssText='width:100%;margin-top:10px;background:#ff2d55;color:#fff;border:none;padding:10px;border-radius:8px;font-weight:bold;cursor:pointer';
@@ -173,28 +165,22 @@ function renderProducts(list){
       dropdown.style.display='none';
       addToCart(p.id, selectedVal, variant.label);
     };
-
     dropdown.append(dropTitle,optionsWrap,confirmBtn);
     dropTitle.querySelector('.closeDrop').onclick=()=> dropdown.style.display='none';
-
-    // === MAIN ADD BUTTON ===
     const btn=document.createElement('button'); 
     btn.textContent='Add to Cart'; 
     btn.className='btn'; 
     btn.onclick=()=>{
-      // if only 1 option, add directly
       if(variant.options.length===1){
         addToCart(p.id, variant.options[0], variant.label);
       } else {
         dropdown.style.display = dropdown.style.display==='none' || !dropdown.style.display ? 'block' : 'none';
       }
     };
-    
     card.append(img,name,cat,price,stock,dropdown,btn); 
     g.appendChild(card);
   });
 }
-
 
 async function filterCat(c,b){
   if(b){
@@ -284,18 +270,20 @@ async function loadCartFromBackend(silent=false){
         color: it.color||'',
         sizeLabel: getVariantForCategory(it.category).label
       }));
-      if(CART.length===0){
-        localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
-        localStorage.setItem('sf_cart_guest', JSON.stringify([]));
-        updateAll();
+      if(backendCart.length===0){
+        if(CART.length>0){
+          CART=[];
+          localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
+          localStorage.setItem('sf_cart_guest', JSON.stringify([]));
+          updateAll();
+        }
         return;
       }
-      if(backendCart.length===0 && CART.length>0 && !silent){ return; }
-      if(backendCart.length>0 && JSON.stringify(backendCart)!== JSON.stringify(CART)){
+      if(JSON.stringify(backendCart)!== JSON.stringify(CART)){
         CART = backendCart;
         localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify(CART));
         updateAll();
-        if(!silent) showToast(`${backendCart.length} items synced from app ✅`);
+        if(!silent) showToast(`${backendCart.length} items synced ✅`);
       }
     }
   }catch(e){ console.log('loadCartFromBackend error',e) }
