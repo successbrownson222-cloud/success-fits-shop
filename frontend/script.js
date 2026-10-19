@@ -46,16 +46,13 @@ async function init(){
     PRODUCTS = Array.isArray(d)? d : (d.products || d.items || []);
     renderProducts(PRODUCTS);
     await updateCategoryCounts();
-    if(user?.email){
-      await loadCartFromBackend(false);
-      setInterval(()=> { if(!IS_CHECKING_OUT) loadCartFromBackend(true) }, 8000);
-    }
     updateAll();
     loadOrderCount();
     initStates();
     const dt=safe('c_date');
     if(dt) dt.min=new Date().toISOString().split('T')[0];
   }catch(e){
+    console.log(e);
     renderProducts([]);
   }
 }
@@ -143,10 +140,7 @@ async function filterCat(c,b){
   if(b){ document.querySelectorAll('#catFilters button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); }
   if(c==='all'){ renderProducts(PRODUCTS); return; }
   const filtered = PRODUCTS.filter(x=> (x.category||'').toLowerCase().includes(c.toLowerCase()));
-  if(filtered.length>0) renderProducts(filtered);
-  else{
-    try{ const r=await fetch(`${API_BASE}/api/products?category=${encodeURIComponent(c)}`); const d=await r.json(); renderProducts(Array.isArray(d)? d : (d.products||[])); }catch{ renderProducts([]); }
-  }
+  renderProducts(filtered);
 }
 function openMenu(){ safe('menuDrawer')?.classList.add('open'); safe('overlay')?.classList.add('show'); }
 function openCart(){ safe('cartDrawer')?.classList.add('open'); safe('overlay')?.classList.add('show'); }
@@ -178,44 +172,6 @@ function updateAll(){
     if(CART.length===0){ list.innerHTML='<div style="text-align:center;color:#666;margin-top:40px">Cart empty</div>'; }
   }catch(e){}
 }
-
-async function loadCartFromBackend(silent=false){
-  try{
-    const just = localStorage.getItem('sf_just_ordered');
-    if(just && Date.now() - parseInt(just) < 120000){
-      CART=[]; 
-      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
-      Object.keys(localStorage).forEach(k=>{ if(k.startsWith('sf_cart_')) localStorage.setItem(k, JSON.stringify([])); });
-      updateAll();
-      return;
-    }
-  }catch{}
-  if(!user?.email) return;
-  if(IS_CHECKING_OUT) return;
-  try{
-    const r=await fetch(API_BASE+'/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
-    const d=await r.json();
-    if(d.items && d.items.length===0){
-      CART=[]; 
-      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
-      updateAll(); 
-      return;
-    }
-  }catch(e){}
-}
-      const backendCart = d.items.map(it=>({
-        id: it.product_id || it.id, product_id: it.product_id || it.id,
-        name: it.name, price: it.price, image: it.image, category: it.category,
-        qty: it.qty||1, size: it.size||'M', selectedSize: it.size||'M', color: '', sizeLabel: getVariantForCategory(it.category).label
-      }));
-      if(JSON.stringify(backendCart)!== JSON.stringify(CART)){
-        CART = backendCart;
-        localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify(CART));
-        updateAll();
-      }
-    }
-  }catch(e){}
-}
 async function syncAddToBackend(product_id, qty=1, size='M'){
   if(!user?.email) return false;
   try{
@@ -241,7 +197,7 @@ async function doAuth(){
     const d=await r.json();
     if(d.ok || d.user){
       if(authMode==='signup'){ if(msgEl) msgEl.innerText='Created! Login'; toggleAuth(); }
-      else { user=d.user; localStorage.setItem('sf_user',JSON.stringify(user)); await loadCartFromBackend(false); closeAll(); updateAll(); loadOrderCount(); }
+      else { user=d.user; localStorage.setItem('sf_user',JSON.stringify(user)); closeAll(); updateAll(); loadOrderCount(); }
     }else{ if(msgEl) msgEl.innerText=d.error||'Error'; }
   }catch(e){ if(msgEl) msgEl.innerText='API error'; }
 }
@@ -279,19 +235,7 @@ async function viewOrders(){
     const email = user.email.toLowerCase().trim();
     const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(email));
     let orders=await r.json();
-    console.log('ORDERS:', orders);
     if(!Array.isArray(orders)) orders=[];
-    // FALLBACK: if empty, try fetching all and filter manually (debug)
-    if(orders.length===0){
-      try{
-        const r2=await fetch(API_BASE+'/api/orders?all=true&email='+encodeURIComponent(email));
-        const allOrders=await r2.json();
-        if(Array.isArray(allOrders) && allOrders.length>0){
-          const myOrders = allOrders.filter(o=> (o.email||'').toLowerCase().trim()===email);
-          if(myOrders.length>0) orders=myOrders;
-        }
-      }catch{}
-    }
     if(!list) return; list.innerHTML='';
     if(!orders.length){ list.innerHTML='<div style="color:#666;text-align:center;padding:20px">No orders for<br>'+email+'</div>'; return; }
     orders.forEach(o=>list.appendChild(createOrderCard(o)));
@@ -315,7 +259,7 @@ async function doCheckout(){
   const itemsText=CART.map(c=>`${c.name} (${c.selectedSize||c.size||'M'}) x${c.qty}`).join(', ');
   const fullAddr=`${addr}, ${lga}, ${state}`;
   IS_CHECKING_OUT=true;
-  // IMMEDIATE CLEAR - BEFORE API CALL
+  localStorage.setItem('sf_just_ordered', Date.now().toString());
   const cartBackup = [...CART];
   CART=[]; 
   Object.keys(localStorage).forEach(k=>{ if(k.startsWith('sf_cart_')) localStorage.setItem(k, JSON.stringify([])); });
@@ -328,16 +272,17 @@ async function doCheckout(){
     const d=await r.json();
     if(d.ok){
       try{ await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase()})}); }catch{}
-      try{ await fetch(API_BASE+'/api/cart/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email.toLowerCase().trim()})}); }catch{}
       if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:30px">✅ Order #'+d.order_id+' placed! Cart cleared</div>';
       const ct=safe('c_total'); if(ct) ct.innerText='₦0';
       setTimeout(()=>{ closeAll(); loadOrderCount(); viewOrders(); IS_CHECKING_OUT=false; }, 1500);
       showToast('Order #'+d.order_id+' placed ✅');
     }else{
       CART=cartBackup; saveCart(); alert(d.error||'Failed'); IS_CHECKING_OUT=false;
+      localStorage.removeItem('sf_just_ordered');
     }
   }catch(e){
     CART=cartBackup; saveCart(); alert('Error: '+e.message); IS_CHECKING_OUT=false;
+    localStorage.removeItem('sf_just_ordered');
   }
 }
-if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); }else{ init(); } 
+if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); }else{ init(); }
