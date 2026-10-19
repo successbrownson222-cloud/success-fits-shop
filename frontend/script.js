@@ -371,8 +371,8 @@ async function addToCart(id, selectedSize='M', sizeLabel='Size'){
   saveCart();
   showToast(`${sizeLabel}: ${selectedSize} - Adding...`);
   const ok=await syncAddToBackend(id, 1, selectedSize);
-  if(ok){ showToast(`Added ${selectedSize} ✅ - check app`); }
-  else { showToast('Added locally, retrying sync...'); setTimeout(()=> syncFullCartToBackend(), 1500); }
+  if(ok){ showToast(`Added ${selectedSize} ✅`); }
+  else { showToast('Added locally, retrying...'); setTimeout(()=> syncFullCartToBackend(), 1500); }
 }
 
 async function changeQty(i,d){
@@ -406,34 +406,38 @@ function createOrderCard(o){
   btnWrap.appendChild(delBtn); card.append(title,details,btnWrap); return card;
 }
 
-async function loadOrderCount(){ if(!user) return; try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); const d=await r.json(); const el=safe('menuOrderCount'); if(Array.isArray(d)&&el) el.innerText=d.length; }catch{} }
+async function loadOrderCount(){ if(!user) return; try{ const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email.toLowerCase())); const d=await r.json(); const el=safe('menuOrderCount'); if(Array.isArray(d)&&el) el.innerText=d.length; }catch{} }
 
 async function viewOrders(){ 
   if(!user) return openAuth(); 
   closeAll(); 
   safe('ordersModal')?.classList.add('show'); 
   safe('overlay')?.classList.add('show'); 
+  const list=safe('ordersList'); 
+  if(list) list.innerHTML='<div style="color:#666;text-align:center;padding:20px">Loading orders...</div>';
   try{ 
-    const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(user.email)); 
+    const email = user.email.toLowerCase().trim();
+    const r=await fetch(API_BASE+'/api/orders?email='+encodeURIComponent(email)); 
     const orders=await r.json(); 
-    const list=safe('ordersList'); 
     if(!list) return; 
     list.innerHTML=''; 
     if(!Array.isArray(orders)||!orders.length){ 
       const empty=document.createElement('div'); 
-      empty.style.cssText='color:#666;text-align:center'; 
-      empty.textContent='No orders yet'; 
+      empty.style.cssText='color:#666;text-align:center;padding:20px'; 
+      empty.innerHTML='No orders yet<br><small>'+email+'</small>'; 
       list.appendChild(empty); 
       return; 
     } 
     orders.forEach(o=>list.appendChild(createOrderCard(o))); 
-  }catch(e){} 
+  }catch(e){
+    if(list) list.innerHTML='<div style="color:#f55;text-align:center">Failed to load</div>';
+  } 
 }
 
 async function deleteOrder(id){ 
   if(!confirm('Delete #'+id+'?')) return; 
   try{ 
-    const r=await fetch(API_BASE+'/api/orders?id='+id+'&email='+encodeURIComponent(user.email),{method:'DELETE'}); 
+    const r=await fetch(API_BASE+'/api/orders?id='+id+'&email='+encodeURIComponent(user.email.toLowerCase()),{method:'DELETE'}); 
     const d=await r.json(); 
     if(d.ok){ 
       showToast('Deleted'); 
@@ -463,12 +467,14 @@ async function doCheckout(){
   const itemsText=CART.map(c=>`${c.name} (${c.selectedSize||c.size||'M'}) x${c.qty}`).join(', ');
   const fullAddr=`${addr}, ${lga}, ${state}`;
   IS_CHECKING_OUT=true;
+  const btnEl = document.querySelector('button[onclick="doCheckout()"]');
+  if(btnEl) btnEl.innerText='Placing...';
   try{
     const r=await fetch(API_BASE+'/api/orders',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        email:user.email,
+        email:user.email.toLowerCase().trim(),
         items:itemsText,
         total:total,
         address:fullAddr,
@@ -481,7 +487,7 @@ async function doCheckout(){
     });
     const d=await r.json();
     if(d.ok){
-      showToast('Order #'+d.order_id+' placed');
+      showToast('Order #'+d.order_id+' placed ✅');
       CART=[];
       localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
       localStorage.setItem('sf_cart_guest', JSON.stringify([]));
@@ -495,18 +501,20 @@ async function doCheckout(){
       }catch{}
       ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=safe(id); if(el) el.innerText='0'; });
       const list=safe('cartList');
-      if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:20px">✅ Order placed! Cart cleared</div>';
+      if(list) list.innerHTML='<div style="text-align:center;color:#0f0;padding:30px">✅ Order #'+d.order_id+' placed! Cart cleared</div>';
       const ct=safe('c_total'); if(ct) ct.innerText='₦0';
-      closeAll(); 
-      loadOrderCount();
+      setTimeout(()=>{ closeAll(); loadOrderCount(); viewOrders(); }, 1500);
     }else{
       alert(d.error||'Failed');
+      IS_CHECKING_OUT=false;
     }
   }catch(e){ 
     alert('Checkout error: '+e.message);
+    IS_CHECKING_OUT=false;
   }
   finally{
-    setTimeout(()=>{ IS_CHECKING_OUT=false; }, 3000);
+    if(btnEl) btnEl.innerText='Place Order';
+    setTimeout(()=>{ IS_CHECKING_OUT=false; }, 5000);
   }
 }
 
