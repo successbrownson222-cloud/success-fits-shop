@@ -178,19 +178,31 @@ function updateAll(){
     if(CART.length===0){ list.innerHTML='<div style="text-align:center;color:#666;margin-top:40px">Cart empty</div>'; }
   }catch(e){}
 }
+
 async function loadCartFromBackend(silent=false){
+  try{
+    const just = localStorage.getItem('sf_just_ordered');
+    if(just && Date.now() - parseInt(just) < 120000){
+      CART=[]; 
+      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
+      Object.keys(localStorage).forEach(k=>{ if(k.startsWith('sf_cart_')) localStorage.setItem(k, JSON.stringify([])); });
+      updateAll();
+      return;
+    }
+  }catch{}
   if(!user?.email) return;
   if(IS_CHECKING_OUT) return;
   try{
     const r=await fetch(API_BASE+'/api/cart?email='+encodeURIComponent(user.email.toLowerCase()));
     const d=await r.json();
-    if(d.items && Array.isArray(d.items)){
-      if(d.items.length===0){
-        if(CART.length>0){
-          CART=[]; localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([])); updateAll();
-        }
-        return;
-      }
+    if(d.items && d.items.length===0){
+      CART=[]; 
+      localStorage.setItem('sf_cart_'+user.email.toLowerCase(), JSON.stringify([]));
+      updateAll(); 
+      return;
+    }
+  }catch(e){}
+}
       const backendCart = d.items.map(it=>({
         id: it.product_id || it.id, product_id: it.product_id || it.id,
         name: it.name, price: it.price, image: it.image, category: it.category,
