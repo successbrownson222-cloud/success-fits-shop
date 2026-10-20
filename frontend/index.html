@@ -6,6 +6,8 @@
 <title>Success Fits - Premium drip from Lagos</title>
 <meta name="theme-color" content="#070707">
 <style>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-512.png">
 *{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif}
 body{background:#070707;color:#fff;padding:0 14px 170px;-webkit-tap-highlight-color:transparent}
 input,select{background:#1e1e1e;border:1px solid #2a2a2a;color:#fff;padding:12px;border-radius:12px;width:100%;margin-bottom:10px;outline:none;font-size:14px}
@@ -222,6 +224,11 @@ async function sf_doCheckout(){
     alert("Error: "+e.message);
     if(btnEl){ btnEl.disabled=false; sf_togglePay(); }
   }
+}
+</script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=> navigator.serviceWorker.register('/sw.js'));
 }
 </script>
 </body>
