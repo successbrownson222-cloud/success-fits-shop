@@ -65,7 +65,6 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
     <input id="c_address" placeholder="Street Address">
     <div style="display:flex;gap:8px"><input id="c_date" type="date" style="flex:1"><select id="c_time" style="flex:1"><option>Morning (9am-12pm)</option><option>Afternoon (12pm-4pm)</option><option>Evening (4pm-8pm)</option></select></div>
 
-    <!-- === SUCCESS PAY WALLET INJECTED === -->
     <div id="sf_walletBox" style="background:#101a0f;border:1.5px solid #1e3d1e;padding:12px;border-radius:12px;margin:12px 0">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <b style="font-size:13px;color:#0aff7a">PAYMENT METHOD</b>
@@ -82,7 +81,7 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
       <div id="sf_pinBox" style="display:none;margin-top:10px">
         <input id="sf_walletPin" type="password" placeholder="Enter Wallet PIN (4 digits)" style="border-color:#0aff7a">
         <div style="font-size:11px;color:#aaa">Acct: <b id="sf_vAcc" style="color:#fff">-</b> • <a href="/wallet.html" style="color:#0aff7a">Fund Wallet</a></div>
-        <div id="sf_createLink" style="display:none;margin-top:6px;font-size:12px"><a href="/wallet.html" style="color:#ff2d55">→ Create Wallet Now (takes 10 sec)</a></div>
+        <div id="sf_createLink" style="display:none;margin-top:6px;font-size:12px"><a href="/wallet.html" style="color:#ff2d55">→ Create Wallet Now</a></div>
       </div>
     </div>
 
@@ -117,96 +116,131 @@ footer{background:#0a0a0a;border-top:1px solid #1a1a1a;padding:24px 14px;margin:
   <button onclick="viewOrders()"><span>📦</span>Orders</button>
 </div>
 
-<script src="script.js" defer></script>
+<script src="script.js"></script>
 <script>
-// === SUCCESS PAY WALLET FOR CHECKOUT ===
+// === WALLET CHECKOUT - FIXED VERSION ===
 let SF_WALLET = null;
 function sf_getEmail(){
-  return (localStorage.getItem('sf_email') || localStorage.getItem('email') || localStorage.getItem('userEmail') || document.getElementById('menuEmail')?.innerText || '').trim().toLowerCase();
+  try{
+    const su = localStorage.getItem('sf_user');
+    if(su){ const u=JSON.parse(su); if(u?.email) return u.email.trim().toLowerCase(); }
+  }catch{}
+  const el = document.getElementById('menuEmail');
+  if(el && el.innerText && !el.innerText.includes('Not logged')) return el.innerText.trim().toLowerCase();
+  return '';
 }
 async function sf_loadWalletForCheckout(){
   let email = sf_getEmail();
-  if(!email || email.includes('not logged')){ 
-    document.getElementById('sf_walletBal').innerText = "Login to use wallet";
-    return;
-  }
+  const balEl = document.getElementById('sf_walletBal');
+  const accEl = document.getElementById('sf_vAcc');
+  const createLink = document.getElementById('sf_createLink');
+  if(!email){ if(balEl) balEl.innerText = "Login to use wallet"; return; }
   try{
     let res = await fetch(`/api/payments/wallet/${email}`);
     if(!res.ok){
-      document.getElementById('sf_walletBal').innerText = "No wallet yet";
-      document.getElementById('sf_createLink').style.display='block';
-      document.getElementById('sf_vAcc').innerText = "Create one";
+      if(balEl) balEl.innerText = "No wallet yet";
+      if(createLink) createLink.style.display='block';
+      if(accEl) accEl.innerText = "Create one";
       return;
     }
     let data = await res.json();
     SF_WALLET = data;
-    document.getElementById('sf_walletBal').innerText = `₦${(data.balance/100).toLocaleString()} bal`;
-    document.getElementById('sf_vAcc').innerText = data.virtual_account;
-  }catch(e){
-    document.getElementById('sf_walletBal').innerText = "";
-  }
+    if(balEl) balEl.innerText = `₦${(data.balance/100).toLocaleString()} bal`;
+    if(accEl) accEl.innerText = data.virtual_account || "-";
+  }catch(e){ if(balEl) balEl.innerText = ""; }
 }
 function sf_togglePay(){
-  let isWallet = document.getElementById('payWalletRadio').checked;
-  document.getElementById('sf_pinBox').style.display = isWallet ? 'block' : 'none';
-  document.getElementById('checkoutBtn').innerText = isWallet ? "Pay with Wallet — Place Order" : "Place Order — Pay on Delivery";
-  document.getElementById('checkoutBtn').style.background = isWallet ? "#0aff7a" : "#ff2d55";
-  document.getElementById('checkoutBtn').style.color = isWallet ? "#000" : "#fff";
-}
-let origDoCheckout = null;
-setTimeout(()=>{ 
-  if(typeof openCart === 'function'){
-    const _openCart = openCart;
-    window.openCart = function(){ _openCart(); sf_loadWalletForCheckout(); }
+  let isWallet = document.getElementById('payWalletRadio')?.checked;
+  const pinBox = document.getElementById('sf_pinBox');
+  const btn = document.getElementById('checkoutBtn');
+  if(pinBox) pinBox.style.display = isWallet ? 'block' : 'none';
+  if(btn){
+    btn.innerText = isWallet ? "Pay with Wallet — Place Order" : "Place Order — Pay on Delivery";
+    btn.style.background = isWallet ? "#0aff7a" : "#ff2d55";
+    btn.style.color = isWallet ? "#000" : "#fff";
   }
+}
+setTimeout(()=>{ 
+  const origOpenCart = window.openCart;
+  window.openCart = function(){ if(origOpenCart) origOpenCart(); else if(typeof openCart==='function') openCart(); sf_loadWalletForCheckout(); }
   sf_loadWalletForCheckout();
-}, 800);
+}, 500);
 
+// FIXED CHECKOUT - clears REAL cart
 async function sf_doCheckout(){
   let email = sf_getEmail();
-  if(!email){ alert("Please login first"); openAuth(); return; }
-  let fullname = document.getElementById('c_fullname').value;
-  let phone = document.getElementById('c_phone').value;
-  let state = document.getElementById('c_state').value;
-  let lga = document.getElementById('c_lga').value;
-  let addr = document.getElementById('c_address').value;
-  let date = document.getElementById('c_date').value;
-  let time = document.getElementById('c_time').value;
-  if(!fullname || !phone || !addr){ alert("Fill name, phone, address"); return; }
+  if(!email){ alert("Please login first"); if(typeof openAuth==='function') openAuth(); return; }
+  let fullname = document.getElementById('c_fullname')?.value?.trim() || email.split('@')[0];
+  let phone = document.getElementById('c_phone')?.value?.trim();
+  let state = document.getElementById('c_state')?.value;
+  let lga = document.getElementById('c_lga')?.value;
+  let addr = document.getElementById('c_address')?.value?.trim();
+  let date = document.getElementById('c_date')?.value;
+  let time = document.getElementById('c_time')?.value || '';
+  if(!phone || !addr || !state){ alert("Fill phone, state, address"); return; }
 
-  let payMethod = document.querySelector('input[name="pay_method"]:checked')?.value || 'pod';
-  let c_totalText = document.getElementById('c_total').innerText;
-  let totalNum = parseInt(c_totalText.replace(/[^0-9]/g,'')) || 0;
+  // Use REAL CART from script.js
+  let realCart = window.CART || [];
+  if(!realCart.length){
+    try{
+      const sc = localStorage.getItem('sf_cart_'+email.toLowerCase());
+      if(sc) realCart = JSON.parse(sc);
+    }catch{}
+  }
+  if(!realCart.length){ alert("Cart empty"); return; }
+
+  let totalNum = realCart.reduce((s,c)=>s+(Number(c.price)||0)*(Number(c.qty)||1),0);
+  let itemsText = realCart.map(c=>`${c.name} (${c.selectedSize||c.size||'M'}) x${c.qty||1}`).join(', ');
   let totalKobo = totalNum * 100;
+  let fullAddr = `${addr}, ${lga||''}, ${state}`;
 
-  document.getElementById('checkoutBtn').innerText = "Processing...";
-  document.getElementById('checkoutBtn').disabled = true;
+  const btn = document.getElementById('checkoutBtn');
+  if(btn){ btn.innerText = "Processing..."; btn.disabled = true; }
+
+  // IMMEDIATE CLEAR - fix for notification
+  window.IS_CHECKING_OUT = true;
+  localStorage.setItem('sf_just_ordered', Date.now().toString());
+  const cartBackup = [...realCart];
+  
+  try{
+    window.CART = [];
+    if(typeof CART !== 'undefined') CART = [];
+    Object.keys(localStorage).forEach(k=>{ if(k.startsWith('sf_cart_')) localStorage.setItem(k, JSON.stringify([])); });
+    localStorage.setItem('sf_cart_'+email.toLowerCase(), JSON.stringify([]));
+    if(typeof updateAll === 'function') updateAll();
+    ['count','cartCount2','cartCount','bottomCount'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerText='0'; });
+    const list=document.getElementById('cartList');
+    if(list) list.innerHTML='<div style="text-align:center;color:#ffcc00;padding:20px">Placing order...</div>';
+    const ct=document.getElementById('c_total'); if(ct) ct.innerText='₦0';
+  }catch{}
 
   try{
-    // Step 1: Create order (your original API)
     let orderRes = await fetch(`/api/orders`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         email: email,
-        items: localStorage.getItem('sf_cart') || localStorage.getItem('cart') || JSON.stringify([]),
+        items: itemsText,
         total: totalNum,
-        address: addr,
+        address: fullAddr,
         phone: phone,
         state: state,
-        lga: lga,
-        delivery_date: date,
+        lga: lga||'',
+        delivery_date: date||new Date().toISOString().split('T')[0],
         delivery_time: time
       })
     });
     let orderData = await orderRes.json();
-    if(!orderRes.ok){ throw new Error(orderData.error || "Order failed"); }
-    let orderId = orderData.order_id || orderData.id || Date.now();
+    if(!orderRes.ok) throw new Error(orderData.error || "Order failed");
+    let orderId = orderData.order_id || orderData.id;
 
-    // Step 2: If wallet, debit
+    // Backend clear
+    try{ await fetch(`/api/cart/clear`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email: email})}); }catch{}
+
+    let payMethod = document.querySelector('input[name="pay_method"]:checked')?.value || 'pod';
     if(payMethod === 'wallet'){
-      let pin = document.getElementById('sf_walletPin').value;
-      if(!pin){ alert("Enter wallet PIN"); document.getElementById('checkoutBtn').disabled=false; document.getElementById('checkoutBtn').innerText="Pay with Wallet — Place Order"; return; }
+      let pin = document.getElementById('sf_walletPin')?.value;
+      if(!pin){ throw new Error("Enter wallet PIN"); }
       let payRes = await fetch(`/api/payments/pay-order`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -214,47 +248,50 @@ async function sf_doCheckout(){
       });
       let payData = await payRes.json();
       if(!payData.ok){
-        alert("Wallet payment failed: "+(payData.error || payData.detail || "Insufficient balance")+"\nOrder #"+orderId+" saved as POD. Fund wallet at /wallet.html");
+        if(typeof showToast==='function') showToast("Order #"+orderId+" saved as POD");
+        alert("Wallet payment failed: "+(payData.error||"Insufficient")+"\nOrder #"+orderId+" saved as Pay on Delivery. Fund at /wallet.html");
       } else {
-        alert(`✅ PAID with Wallet!\nOrder #${orderId}\nRef: ${payData.ref}\nNew Balance: ₦${(payData.new_balance/100).toLocaleString()}`);
+        if(typeof showToast==='function') showToast(`✅ Paid! Bal ₦${(payData.new_balance/100).toLocaleString()}`);
+        alert(`✅ PAID with Wallet!\nOrder #${orderId}\nRef: ${payData.ref}\nNew Bal: ₦${(payData.new_balance/100).toLocaleString()}`);
       }
     } else {
-      alert(`✅ Order #${orderId} placed — Pay on Delivery`);
+      if(typeof showToast==='function') showToast(`✅ Order #${orderId} placed!`);
     }
 
-    // Clear cart - call your existing clear if exists
-    if(typeof clearCart === 'function'){ /* your script */ }
-    try{
-      await fetch(`/api/cart/clear`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email: email})});
-    }catch(e){}
-    localStorage.removeItem('cart');
-    localStorage.removeItem('sf_cart');
-    closeAll();
-    viewOrders();
+    if(list) list.innerHTML=`<div style="text-align:center;color:#0f0;padding:30px"><div style="font-size:40px">✅</div><b>Order #${orderId} placed!</b><br><span style="color:#aaa;font-size:12px">Pay on Delivery • Cart cleared</span></div>`;
+    if(ct) ct.innerText='₦0';
+    if(typeof loadOrderCount==='function') loadOrderCount();
+    setTimeout(()=>{ 
+      if(typeof closeAll==='function') closeAll(); 
+      if(typeof viewOrders==='function') viewOrders();
+      window.IS_CHECKING_OUT=false;
+    }, 1500);
+
   }catch(e){
+    // Restore on fail
+    window.CART = cartBackup;
+    if(typeof CART !== 'undefined') CART = cartBackup;
+    localStorage.setItem('sf_cart_'+email.toLowerCase(), JSON.stringify(cartBackup));
+    if(typeof updateAll==='function') updateAll();
+    window.IS_CHECKING_OUT=false;
+    localStorage.removeItem('sf_just_ordered');
     alert("Error: "+e.message);
-  } finally {
-    document.getElementById('checkoutBtn').disabled=false;
-    sf_togglePay();
+    if(btn){ btn.disabled=false; sf_togglePay(); }
   }
 }
 </script>
 <script>
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
+  e.preventDefault(); deferredPrompt = e;
   const btn = document.getElementById('installBtn');
   if(btn) btn.style.display = 'block';
 });
 document.getElementById('installBtn')?.addEventListener('click', async () => {
-  if(!deferredPrompt){
-    if(typeof showToast==='function') showToast('To install: Tap Share > Add to Home Screen');
-    return;
-  }
+  if(!deferredPrompt){ if(typeof showToast==='function') showToast('Tap Share > Add to Home Screen'); return; }
   deferredPrompt.prompt();
   const { outcome } = await deferredPrompt.userChoice;
-  if(typeof showToast==='function') showToast(outcome === 'accepted' ? 'Installing...' : 'Install dismissed');
+  if(typeof showToast==='function') showToast(outcome === 'accepted' ? 'Installing...' : 'Dismissed');
   deferredPrompt = null;
 });
 </script>
